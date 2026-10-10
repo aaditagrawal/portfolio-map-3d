@@ -8,9 +8,41 @@ import { fnv1a, seeded } from "../lib/hash.ts";
 import { MARK, type Point } from "../lib/mark.ts";
 import { planBands, planDots, type SurfaceCompany, type SurfaceDistrict } from "../lib/surface.ts";
 
-export const FONT_FAMILY = '"Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+export const FONT_FAMILY = '"DM Sans", system-ui, sans-serif';
+export const HEADING_FONT_FAMILY = '"Instrument Sans", system-ui, sans-serif';
 
-const SPACE = "#05060f";
+function fontFamily(heading = false): string {
+  if (typeof document === "undefined") return heading ? HEADING_FONT_FAMILY : FONT_FAMILY;
+  const css = getComputedStyle(document.documentElement);
+  return (heading ? css.getPropertyValue("--font-heading") || css.getPropertyValue("--heading") : css.getPropertyValue("--font")).trim() || (heading ? HEADING_FONT_FAMILY : FONT_FAMILY);
+}
+
+export interface PaintTheme {
+  dark: boolean;
+  background: string;
+  surface: string;
+  border: string;
+  text: string;
+  muted: string;
+}
+
+export function paintTheme(): PaintTheme {
+  const fallback = { dark: true, background: "#090909", surface: "#18181b", border: "rgba(161,161,170,.32)", text: "#f4f4f5", muted: "#a1a1aa" };
+  if (typeof document === "undefined") return fallback;
+  const css = getComputedStyle(document.documentElement);
+  const token = (name: string, value: string) => css.getPropertyValue(name).trim() || value;
+  const dark = css.colorScheme.includes("dark");
+  return {
+    dark,
+    background: dark ? token("--bg-deep", token("--bg", fallback.background)) : token("--bg", "#fafafa"),
+    surface: token("--surface", fallback.surface),
+    border: token("--border-strong", fallback.border),
+    text: token("--text", fallback.text),
+    muted: token("--text-muted", fallback.muted),
+  };
+}
+
+const SPACE = "#09090b";
 
 /* ---------- World surfaces ---------- */
 
@@ -81,10 +113,10 @@ export function paintSurface(ctx: CanvasRenderingContext2D, w: number, h: number
 
   // Poles darken a little, so the texture's pinch there does not draw the eye.
   const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, "rgba(3,4,11,0.45)");
-  g.addColorStop(0.16, "rgba(3,4,11,0)");
-  g.addColorStop(0.84, "rgba(3,4,11,0)");
-  g.addColorStop(1, "rgba(3,4,11,0.45)");
+  g.addColorStop(0, "rgba(9,9,11,0.45)");
+  g.addColorStop(0.16, "rgba(9,9,11,0)");
+  g.addColorStop(0.84, "rgba(9,9,11,0)");
+  g.addColorStop(1, "rgba(9,9,11,0.45)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
@@ -139,8 +171,8 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, max: number): stri
   return `${text.slice(0, lo).trimEnd()}…`;
 }
 
-const titleFont = (s: number) => `600 ${LABEL.title * s}px ${FONT_FAMILY}`;
-const subtitleFont = (s: number) => `400 ${LABEL.subtitle * s}px ${FONT_FAMILY}`;
+const titleFont = (s: number) => `600 ${LABEL.title * s}px ${fontFamily(true)}`;
+const subtitleFont = (s: number) => `400 ${LABEL.subtitle * s}px ${fontFamily()}`;
 
 /** The canvas size a label needs at `scale`. */
 export function labelSize(ctx: CanvasRenderingContext2D, c: LabelContent, scale: number): { w: number; h: number } {
@@ -223,14 +255,15 @@ export function drawMark(ctx: CanvasRenderingContext2D, cx: number, cy: number, 
 /** Paints a label on a canvas already sized by labelSize(). */
 export function paintLabel(ctx: CanvasRenderingContext2D, w: number, h: number, c: LabelContent, scale: number): void {
   const s = scale;
+  const theme = paintTheme();
   ctx.save();
   ctx.clearRect(0, 0, w, h);
   const inset = 2 * s;
   roundRect(ctx, inset, inset, w - inset * 2, h - inset * 2, (h - inset * 2) / 2);
-  ctx.fillStyle = "rgba(6, 9, 24, 0.78)";
+  ctx.fillStyle = theme.surface;
   ctx.fill();
   ctx.lineWidth = 1.5 * s;
-  ctx.strokeStyle = c.dim ? "rgba(255, 210, 127, 0.35)" : "rgba(170, 185, 255, 0.28)";
+  ctx.strokeStyle = c.dim ? "rgba(255, 210, 127, 0.35)" : theme.border;
   ctx.stroke();
 
   // The badge: the logo on a light plate, the Nexus mark, or initials on the accent.
@@ -269,10 +302,10 @@ export function paintLabel(ctx: CanvasRenderingContext2D, w: number, h: number, 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.font = titleFont(s);
-  ctx.fillStyle = "#eef1ff";
-  ctx.fillText(fitText(ctx, c.title, LABEL.maxText * s), tx, h / 2 - 2 * s);
+  ctx.fillStyle = theme.text;
+  ctx.fillText(fitText(ctx, c.title, LABEL.maxText * s), tx, h / 2 + (c.subtitle ? -2 : 11) * s);
   ctx.font = subtitleFont(s);
-  ctx.fillStyle = c.dim ? "#ffd27f" : "#aeb6da";
+  ctx.fillStyle = c.dim ? "#ffd27f" : theme.muted;
   ctx.fillText(fitText(ctx, c.subtitle, LABEL.maxText * s), tx, h / 2 + 26 * s);
   ctx.restore();
 }
@@ -292,9 +325,9 @@ export function paintGlow(ctx: CanvasRenderingContext2D, size: number, stops: [n
  * The sky behind everything, equirectangular: deep space with soft violet, blue and teal
  * clouds, and a faint band of light across it. Seeded, so it is the same on every visit.
  */
-export function paintNebula(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+export function paintNebula(ctx: CanvasRenderingContext2D, w: number, h: number, theme = paintTheme()): void {
   const rand = seeded(20261009);
-  ctx.fillStyle = "#03040b";
+  ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
   const blob = (x: number, y: number, r: number, color: string) => {
     for (const dx of [-w, 0, w]) {
@@ -305,8 +338,8 @@ export function paintNebula(ctx: CanvasRenderingContext2D, w: number, h: number)
       ctx.fillRect(x + dx - r, y - r, r * 2, r * 2);
     }
   };
-  const hues = ["rgba(110, 72, 230, A)", "rgba(40, 80, 210, A)", "rgba(20, 150, 180, A)", "rgba(160, 60, 170, A)"];
-  ctx.globalCompositeOperation = "lighter";
+  const hues = ["rgba(110, 110, 118, A)", "rgba(90, 90, 98, A)", "rgba(100, 100, 104, A)", "rgba(120, 120, 128, A)"];
+  ctx.globalCompositeOperation = theme.dark ? "lighter" : "multiply";
   // The band: many soft clouds along a gentle wave.
   for (let i = 0; i < 70; i++) {
     const u = rand();
@@ -320,7 +353,7 @@ export function paintNebula(ctx: CanvasRenderingContext2D, w: number, h: number)
   // Faint far stars, painted into the sky for depth.
   for (let i = 0; i < 900; i++) {
     const y = h * (0.06 + rand() * 0.88);
-    ctx.fillStyle = `rgba(220, 230, 255, ${(0.08 + rand() * 0.32).toFixed(2)})`;
+    ctx.fillStyle = theme.dark ? `rgba(220, 230, 255, ${(0.08 + rand() * 0.32).toFixed(2)})` : `rgba(63, 63, 70, ${(0.04 + rand() * 0.15).toFixed(2)})`;
     ctx.fillRect(rand() * w, y, 1, 1);
   }
   ctx.globalCompositeOperation = "source-over";

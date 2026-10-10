@@ -1,5 +1,5 @@
-/* The Nexus scene: one renderer, one canvas, used by both the landing page's hero (a slow,
-   passive drift) and the world mode (orbit, zoom, pick, fly).
+/* The Nexus scene: one renderer and canvas, shared by the interactive landing universe
+   and the world mode (orbit, zoom, pick, fly).
 
    What it draws, all procedural (no network assets): a nebula sky and a starfield, the core
    (a crystalline form with rings), a world per instance (its surface painted on a canvas:
@@ -18,13 +18,16 @@
    GPU resource. */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { declutter, type LabelBox } from "../lib/declutter.ts";
+import { declutter, overlaps, type LabelBox, type Rect } from "../lib/declutter.ts";
 import { seeded } from "../lib/hash.ts";
 import { LAYOUT, extent, type Placement } from "../lib/layout.ts";
 import type { SurfaceCompany, SurfaceDistrict } from "../lib/surface.ts";
 import { watchContext } from "./contextWatch.ts";
 import { cpuCanvas } from "./cpuCanvas.ts";
-import { FONT_FAMILY, labelSize, paintGlow, paintLabel, paintNebula, paintSurface, type LabelContent } from "./paint.ts";
+import { FONT_FAMILY, HEADING_FONT_FAMILY, labelSize, paintGlow, paintLabel, paintSurface, paintTheme, type LabelContent } from "./paint.ts";
+import { moonLayout, type MoonPlacement } from "./moonLayout.ts";
+import { MoonLabels, type MoonAnchor } from "./moonLabels.ts";
+import { createAuroraMaterial, paintAurora } from "./aurora.ts";
 
 export interface EngineWorld {
   id: string;
@@ -37,8 +40,9 @@ export interface EngineWorld {
   initials: string;
   /** A same-origin image URL, or null. */
   logoUrl: string | null;
-  districts: SurfaceDistrict[];
+  districts: (SurfaceDistrict & { label: string })[];
   companies: SurfaceCompany[];
+  companyLabels: { one: string; many: string };
 }
 
 export interface Insets {
@@ -50,7 +54,7 @@ export interface Insets {
 
 export interface EngineHooks {
   /** A world (its id), the core ("core"), or nothing (null) was clicked or tapped. */
-  onPick(id: string | null): void;
+  onPick(id: string | null, district?: string): void;
   /** The WebGL context was lost and never restored: the owner should build a new engine. */
   onGiveUp(): void;
 }
@@ -81,6 +85,15 @@ interface LabelObject {
   opacity: number;
 }
 
+interface MoonSystem {
+  worldId: string;
+  mesh: THREE.InstancedMesh;
+  placements: MoonPlacement[];
+  labels: MoonLabels;
+  hover: number | null;
+  selected: string | null;
+}
+
 interface Flight {
   fromPos: THREE.Vector3;
   fromTarget: THREE.Vector3;
@@ -106,10 +119,6 @@ const GLOW_STOPS: [number, string][] = [
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
-const smoothstep = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
 
 /* ---------- Shaders ---------- */
 
@@ -135,12 +144,46 @@ varying vec3 vP;
 void main() {
   vec3 base = texture2D(uMap, vUv).rgb;
   vec3 n = normalize(vN);
-  // The core, at the origin, lights every world: a soft wrap so the far side stays readable.
-  float ndl = clamp((dot(n, normalize(-vP)) + 0.3) / 1.3, 0.0, 1.0);
+  // A broad overhead key gives shape; the core adds light on the inward-facing side.
+  vec3 key = normalize(vec3(-0.35, 0.8, 0.45));
+  float keyLight = max(dot(n, key), 0.0);
+  float coreLight = max(dot(n, normalize(-vP)), 0.0);
   vec3 v = normalize(cameraPosition - vP);
-  float rim = pow(1.0 - max(dot(n, v), 0.0), 2.4);
-  vec3 col = base * (0.42 + 0.72 * ndl) + uRim * rim * 0.75;
+  float rim = pow(1.0 - max(dot(n, v), 0.0), 3.4);
+  float sheen = pow(max(dot(n, normalize(key + v)), 0.0), 30.0);
+  vec3 col = base * (0.16 + 0.78 * keyLight + 0.32 * coreLight);
+  col += vec3(0.95, 0.97, 1.0) * sheen * 0.16 + uRim * rim * 0.2;
   gl_FragColor = vec4(col * uDim, 1.0);
+  #include <colorspace_fragment>
+}`;
+
+const MOON_VERT = /* glsl */ `
+varying vec3 vN;
+varying vec3 vP;
+varying vec3 vLocal;
+varying vec3 vColor;
+void main() {
+  vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  vP = wp.xyz;
+  vLocal = position;
+  vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+  vColor = instanceColor;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+
+const MOON_FRAG = /* glsl */ `
+varying vec3 vN;
+varying vec3 vP;
+varying vec3 vLocal;
+varying vec3 vColor;
+void main() {
+  vec3 n = normalize(vN);
+  vec3 key = normalize(vec3(-0.35, 0.8, 0.45));
+  float light = max(dot(n, key), 0.0);
+  float core = max(dot(n, normalize(-vP)), 0.0);
+  float grain = 0.86 + 0.14 * sin(vLocal.x * 29.0) * sin(vLocal.y * 23.0) * sin(vLocal.z * 31.0);
+  vec3 col = vColor * grain * (0.2 + light * 0.85 + core * 0.25);
+  gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
 }`;
 
@@ -215,10 +258,12 @@ void main() {
 
 const STAR_FRAG = /* glsl */ `
 varying vec3 vColor;
+uniform float uDark;
 void main() {
   float d = length(gl_PointCoord - 0.5);
   float a = smoothstep(0.5, 0.1, d);
-  gl_FragColor = vec4(vColor * a, a);
+  vec3 col = mix(vec3(0.16, 0.16, 0.18), vColor, uDark);
+  gl_FragColor = vec4(mix(col, col * a, uDark), a);
   #include <colorspace_fragment>
 }`;
 
@@ -266,6 +311,7 @@ export class NexusEngine {
   private last = 0;
   private time = 0;
   private stopWatch: () => void;
+  private stopThemeWatch: () => void;
   private controlsConnected = false;
   private interacting = false;
   private idleUntil = 0;
@@ -278,12 +324,18 @@ export class NexusEngine {
   private flight: Flight | null = null;
   private insetsNow: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
   private insetsGoal: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  private insetProjection = { w: 0, h: 0, x: NaN, y: NaN };
+  private heroOverlay: Rect | null = null;
 
   private specs: EngineWorld[] = [];
   private coreSubtitle = "";
   private worlds = new Map<string, WorldObject>();
   private readonly worldGroup = new THREE.Group();
   private readonly sphere = new THREE.SphereGeometry(1, 48, 32);
+  private readonly overviewSphere = new THREE.SphereGeometry(1, 32, 24);
+  private environmentFocus: string | null | undefined;
+  private moons: MoonSystem | null = null;
+  private surfaceFocus: string | null = null;
   private atmosphere: THREE.InstancedMesh | null = null;
   private bridges: THREE.LineSegments | null = null;
   private flow: THREE.Points | null = null;
@@ -294,19 +346,27 @@ export class NexusEngine {
   private readonly coreSpin: THREE.Object3D[] = [];
   private readonly rings: THREE.Mesh[] = [];
   private coreLabel: LabelObject | null = null;
-  private coreHit: THREE.Mesh;
   private readonly selectRing = new THREE.Group();
   private readonly hoverRing: THREE.Mesh;
 
   private readonly sky: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; texture: THREE.CanvasTexture };
+  private readonly skyMaterial: THREE.ShaderMaterial;
   private readonly glow: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; texture: THREE.CanvasTexture };
   private readonly starMaterial: THREE.ShaderMaterial;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
+  private readonly pickSphere = new THREE.Sphere();
+  private readonly pickPoint = new THREE.Vector3();
+  private readonly pickCenter = new THREE.Vector3();
   private down: { x: number; y: number; t: number } | null = null;
   private hoverQueued = false;
   private lastMove: PointerEvent | null = null;
+  private readonly labelCamera = new THREE.Matrix4();
+  private readonly labelProjection = new THREE.Matrix4();
+  private labelsNeedLayout = true;
+  private labelsFading = true;
+  private pickedDistrict: string | undefined;
 
   constructor(hooks: EngineHooks, reduced: boolean) {
     this.hooks = hooks;
@@ -314,10 +374,10 @@ export class NexusEngine {
     this.canvas = document.createElement("canvas");
     this.canvas.className = "nexus-canvas";
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
-    this.renderer.setClearColor("#03040b", 1);
+    this.renderer.setClearColor(paintTheme().background, 1);
 
     this.camera.position.set(0, 18, 60);
     this.controls = new OrbitControls(this.camera, this.canvas);
@@ -343,10 +403,12 @@ export class NexusEngine {
 
     // Sky.
     const [skyCanvas, skyCtx] = cpuCanvas(2048, 1024);
-    paintNebula(skyCtx, 2048, 1024);
+    paintAurora(skyCtx, 2048, 1024);
     const skyTexture = this.canvasTexture(skyCanvas);
     this.sky = { canvas: skyCanvas, ctx: skyCtx, texture: skyTexture };
-    const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(2400, 48, 24), new THREE.MeshBasicMaterial({ map: skyTexture, side: THREE.BackSide, depthWrite: false }));
+    const theme = paintTheme();
+    this.skyMaterial = createAuroraMaterial(skyTexture, theme.dark, theme.background);
+    const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(2400, 24, 12), this.skyMaterial);
     skyMesh.renderOrder = -10;
     this.scene.add(skyMesh);
 
@@ -354,7 +416,7 @@ export class NexusEngine {
     this.starMaterial = new THREE.ShaderMaterial({
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,
-      uniforms: { uPixelRatio: { value: this.renderer.getPixelRatio() } },
+      uniforms: { uPixelRatio: { value: this.renderer.getPixelRatio() }, uDark: { value: paintTheme().dark ? 1 : 0 } },
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -365,7 +427,7 @@ export class NexusEngine {
     const [glowCanvas, glowCtx] = cpuCanvas(256, 256);
     paintGlow(glowCtx, 256, GLOW_STOPS);
     this.glow = { canvas: glowCanvas, ctx: glowCtx, texture: this.canvasTexture(glowCanvas) };
-    this.coreHit = this.buildCore();
+    this.buildCore();
     this.scene.add(this.core);
 
     this.flowMaterial = new THREE.ShaderMaterial({
@@ -380,7 +442,7 @@ export class NexusEngine {
     this.scene.add(this.worldGroup);
 
     // Rings marking the world in view, and the one under the pointer.
-    const ringGeo = new THREE.TorusGeometry(1, 0.009, 6, 192);
+    const ringGeo = new THREE.TorusGeometry(1, 0.009, 4, 96);
     const ringA = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
     ringA.rotation.x = Math.PI / 2;
     const ringB = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -396,8 +458,10 @@ export class NexusEngine {
 
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     this.canvas.addEventListener("pointerup", this.onPointerUp);
+    this.canvas.addEventListener("pointercancel", this.onPointerCancel);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerleave", this.onPointerLeave);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
 
     this.stopWatch = watchContext(this.canvas, {
       restored: () => {
@@ -410,7 +474,7 @@ export class NexusEngine {
     // Labels are painted at once with whatever font is ready, and again with the page's font.
     const fonts = document.fonts;
     if (fonts) {
-      Promise.all([fonts.load(`600 32px ${FONT_FAMILY}`), fonts.load(`400 23px ${FONT_FAMILY}`), fonts.load(`700 24px ${FONT_FAMILY}`)])
+      Promise.all([fonts.load(`500 32px ${HEADING_FONT_FAMILY}`), fonts.load(`400 23px ${FONT_FAMILY}`), fonts.load(`600 24px ${FONT_FAMILY}`)])
         .catch(() => undefined)
         .then(() => fonts.ready)
         .then(() => {
@@ -421,6 +485,31 @@ export class NexusEngine {
         });
     }
     this.applyControls();
+    let themeKey = "";
+    const refreshTheme = () => {
+      const theme = paintTheme();
+      const key = JSON.stringify(theme);
+      if (key === themeKey || this.disposed) return;
+      themeKey = key;
+      this.renderer.setClearColor(theme.background, 1);
+      this.skyMaterial.uniforms.uDark.value = theme.dark ? 1 : 0;
+      this.skyMaterial.uniforms.uBackground.value.set(theme.background);
+      this.starMaterial.uniforms.uDark.value = theme.dark ? 1 : 0;
+      this.starMaterial.blending = theme.dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+      this.starMaterial.needsUpdate = true;
+      // A theme changes text and sky colors; planet artwork already stays readable.
+      this.repaintLabels();
+      this.invalidate();
+    };
+    const themeObserver = new MutationObserver(refreshTheme);
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class", "style"] });
+    const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+    themeMedia.addEventListener("change", refreshTheme);
+    this.stopThemeWatch = () => {
+      themeObserver.disconnect();
+      themeMedia.removeEventListener("change", refreshTheme);
+    };
+    refreshTheme();
   }
 
   /* ---------- Public API ---------- */
@@ -431,6 +520,7 @@ export class NexusEngine {
     if (this.host && this.host !== host) this.detach(this.host);
     this.host = host;
     host.appendChild(this.canvas);
+    if (this.moons) host.appendChild(this.moons.labels.root);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
     this.resize();
@@ -442,6 +532,7 @@ export class NexusEngine {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     if (this.canvas.parentElement === host) host.removeChild(this.canvas);
+    this.moons?.labels.root.remove();
     this.host = null;
     this.stop();
   }
@@ -466,9 +557,8 @@ export class NexusEngine {
     this.clearWorlds();
     this.specs = list;
     this.coreSubtitle = coreSubtitle;
-    const many = list.length > 60;
-    const surfaceSize: [number, number] = many ? [256, 128] : [512, 256];
-    const labelScale = list.length > 40 ? 1 : 2;
+    const surfaceSize = this.surfaceSize();
+    const labelScale = list.length > 40 ? 1.5 : 3;
     for (const spec of list) {
       const p = spec.placement;
       const pos = new THREE.Vector3(p.x, p.y, p.z);
@@ -481,7 +571,7 @@ export class NexusEngine {
         fragmentShader: WORLD_FRAG,
         uniforms: { uMap: { value: texture }, uRim: { value: new THREE.Color(spec.accent) }, uDim: { value: spec.dim ? 0.6 : 1 } },
       });
-      const mesh = new THREE.Mesh(this.sphere, material);
+      const mesh = new THREE.Mesh(this.overviewSphere, material);
       mesh.position.copy(pos);
       mesh.scale.setScalar(p.radius);
       mesh.rotation.y = (p.slot * 1.7) % (Math.PI * 2);
@@ -495,10 +585,10 @@ export class NexusEngine {
       this.worlds.set(spec.id, obj);
       if (spec.logoUrl) this.loadLogo(obj, spec.logoUrl);
     }
-    this.buildAtmosphere();
     this.buildBridges();
     this.updateCoreLabel();
     if (this.view.kind === "world" && !this.worlds.has(this.view.id)) this.view = { kind: "overview" };
+    this.syncMoons();
     this.applyControls();
     if (this.view.kind === "world" && this.pendingArrival) this.showWorld(this.view.id, this.pendingArrival);
     else this.frameView();
@@ -511,13 +601,45 @@ export class NexusEngine {
     if (g.top === insets.top && g.right === insets.right && g.bottom === insets.bottom && g.left === insets.left) return;
     this.insetsGoal = { ...insets };
     if (this.reduced) this.applyInsets(1);
+    if (!this.flight && !this.interacting && !this.userMoved) this.frameView();
     this.invalidate();
   }
 
-  /** The landing page's hero: a slow drift, no input. */
+  /** Keep labels clear of the landing copy without squeezing the whole universe beside it. */
+  setHeroOverlay(rect: Rect): void {
+    this.heroOverlay = rect;
+    this.labelsNeedLayout = true;
+    this.invalidate();
+  }
+
+  /** Keep the selected district's moon and label in sync with the directory filter. */
+  setDistrict(district: string | null): void {
+    if (!this.moons || this.moons.selected === district) return;
+    this.moons.selected = district;
+    this.updateMoonLabel();
+    this.labelsNeedLayout = true;
+    this.invalidate();
+  }
+
+  /** Zoom controls for the hero, where the wheel and vertical swipes scroll the page. */
+  zoom(factor: number): void {
+    this.flight = null;
+    this.userMoved = true;
+    this.idleUntil = performance.now() + IDLE_BEFORE_DRIFT_MS;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const distance = THREE.MathUtils.clamp(offset.length() * factor, this.controls.minDistance, this.controls.maxDistance);
+    this.camera.position.copy(this.controls.target).add(offset.setLength(distance));
+    this.syncControls();
+    this.invalidate();
+  }
+
+  /** The landing universe supports orbiting and picking, with an idle drift. */
   showHero(): void {
     this.view = { kind: "hero" };
+    this.labelsNeedLayout = true;
+    this.syncMoons();
     this.pendingArrival = null;
+    this.idleUntil = 0;
     this.applyControls();
     const az = this.azimuth();
     this.flyTo(() => this.heroFraming(az), { duration: 1.6 });
@@ -526,6 +648,8 @@ export class NexusEngine {
   /** The world mode's overview of every world. */
   showOverview(): void {
     this.view = { kind: "overview" };
+    this.labelsNeedLayout = true;
+    this.syncMoons();
     this.pendingArrival = null;
     this.applyControls();
     const az = this.azimuth();
@@ -545,6 +669,8 @@ export class NexusEngine {
       return;
     }
     this.pendingArrival = null;
+    this.syncMoons();
+    this.labelsNeedLayout = true;
     this.applyControls();
     if (same && arrival === "none") return;
     if (arrival === "portal" && !this.reduced) {
@@ -564,12 +690,13 @@ export class NexusEngine {
   repaintLabels(): void {
     for (const w of this.worlds.values()) this.paintLabelObject(w.label);
     if (this.coreLabel) this.paintLabelObject(this.coreLabel);
+    this.labelsNeedLayout = true;
     this.invalidate();
   }
 
   /** Asks for a frame. */
   invalidate = (): void => {
-    if (this.disposed || !this.host || !this.active) return;
+    if (this.disposed || !this.host || !this.active || document.hidden) return;
     this.dirty = true;
     if (this.running) return;
     this.running = true;
@@ -582,11 +709,15 @@ export class NexusEngine {
     this.disposed = true;
     this.stop();
     this.stopWatch();
+    this.stopThemeWatch();
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
+    this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
     this.controls.dispose();
+    this.moons?.labels.dispose();
     this.resizeObserver?.disconnect();
     for (const w of this.worlds.values()) if (w.logo) w.logo.onload = null;
     const textures = new Set<THREE.Texture>();
@@ -603,6 +734,7 @@ export class NexusEngine {
     });
     for (const t of textures) t.dispose();
     this.sphere.dispose();
+    this.overviewSphere.dispose();
     this.flowMaterial.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
@@ -647,8 +779,8 @@ export class NexusEngine {
     return points;
   }
 
-  /** The core: a dark crystal, two cages, a glow and three rings. Returns its pick target. */
-  private buildCore(): THREE.Mesh {
+  /** The core: a dark crystal, two cages, a glow and three rings. */
+  private buildCore(): void {
     const R = LAYOUT.coreRadius;
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glow.texture, color: "#ffffff", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     glow.scale.setScalar(R * 9);
@@ -678,16 +810,12 @@ export class NexusEngine {
       [R * 2.6, 1.45, 1.1, new THREE.Color("#ffffff"), 0.22],
     ];
     for (const [radius, rx, rz, color, opacity] of ringSpecs) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.035, 8, 200), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false }));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.035, 6, 112), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false }));
       ring.rotation.set(rx, 0, rz);
       this.core.add(ring);
       this.rings.push(ring);
     }
 
-    const hit = new THREE.Mesh(new THREE.SphereGeometry(R * 1.1, 16, 12), new THREE.MeshBasicMaterial({ visible: false }));
-    hit.userData.worldId = "core";
-    this.core.add(hit);
-    return hit;
   }
 
   private makeLabel(content: LabelContent, scale: number): LabelObject {
@@ -720,6 +848,7 @@ export class NexusEngine {
     paintLabel(label.ctx, label.canvas.width, label.canvas.height, label.content, label.scale);
     label.texture.needsUpdate = true;
     label.aspect = label.canvas.width / label.canvas.height;
+    this.labelsNeedLayout = true;
   }
 
   private updateCoreLabel(): void {
@@ -749,9 +878,17 @@ export class NexusEngine {
   }
 
   private buildAtmosphere(): void {
-    const list = [...this.worlds.values()];
+    if (this.atmosphere) {
+      this.atmosphere.removeFromParent();
+      this.atmosphere.geometry.dispose();
+      (this.atmosphere.material as THREE.Material).dispose();
+      this.atmosphere.dispose();
+      this.atmosphere = null;
+    }
+    const list = [...this.worlds.values()].filter((w) => this.view.kind !== "world" || w.spec.id === this.view.id);
     if (!list.length) return;
-    const geometry = this.sphere.clone();
+    // Atmosphere only provides a smooth rim; it needs fewer vertices than a planet.
+    const geometry = new THREE.SphereGeometry(1, 24, 16);
     const mesh = new THREE.InstancedMesh(
       geometry,
       new THREE.ShaderMaterial({ vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG, transparent: true, depthWrite: false, side: THREE.BackSide, blending: THREE.AdditiveBlending }),
@@ -761,10 +898,10 @@ export class NexusEngine {
     const m = new THREE.Matrix4();
     const c = new THREE.Color();
     list.forEach((w, i) => {
-      m.compose(w.pos, new THREE.Quaternion(), new THREE.Vector3().setScalar(w.radius * 1.22));
+      m.compose(w.pos, new THREE.Quaternion(), new THREE.Vector3().setScalar(w.radius * 1.13));
       mesh.setMatrixAt(i, m);
       mesh.setColorAt(i, c.set(w.spec.accent));
-      strength[i] = w.spec.dim ? 0.35 : 1;
+      strength[i] = w.spec.dim ? 0.2 : 0.55;
     });
     geometry.setAttribute("aStrength", new THREE.InstancedBufferAttribute(strength, 1));
     mesh.frustumCulled = false;
@@ -846,6 +983,10 @@ export class NexusEngine {
   }
 
   private clearWorlds(): void {
+    this.clearMoons();
+    this.surfaceFocus = null;
+    this.environmentFocus = undefined;
+    this.labelsNeedLayout = true;
     for (const w of this.worlds.values()) {
       if (w.logo) w.logo.onload = null;
       w.material.dispose();
@@ -871,9 +1012,127 @@ export class NexusEngine {
     this.hoverId = null;
   }
 
+  /** Focused inspection keeps only the selected planet's geometry and atmosphere. */
+  private applySceneFocus(id: string | null): void {
+    if (this.environmentFocus === id) return;
+    this.environmentFocus = id;
+    for (const w of this.worlds.values()) {
+      w.mesh.visible = !id || w.spec.id === id;
+      w.mesh.geometry = w.spec.id === id ? this.sphere : this.overviewSphere;
+      if (id && (w.spec.id !== id || w.spec.districts.length > 14)) {
+        w.label.sprite.visible = false;w.label.opacity = 0;w.label.material.opacity = 0;
+      }
+    }
+    this.core.visible = !id;
+    if (this.coreLabel && id) {this.coreLabel.sprite.visible = false;this.coreLabel.opacity = 0;}
+    if (this.bridges) this.bridges.visible = !id;
+    if (this.flow) this.flow.visible = !id;
+    this.hoverId = null;
+    this.hoverRing.visible = false;
+    this.buildAtmosphere();
+  }
+
+  /** Only the selected planet has moons, so the overview stays easy to read. */
+  private syncMoons(): void {
+    const id = this.view.kind === "world" ? this.view.id : null;
+    this.applySceneFocus(id);
+    if (this.surfaceFocus !== id) {
+      const previous = this.surfaceFocus ? this.worlds.get(this.surfaceFocus) : undefined;
+      if (previous) this.resizeSurface(previous, ...this.surfaceSize());
+      const next = id ? this.worlds.get(id) : undefined;
+      if (next) this.resizeSurface(next, 2048, 1024);
+      this.surfaceFocus = next ? id : null;
+    }
+    if (id && this.moons?.worldId === id) return;
+    this.clearMoons();
+    const w = id ? this.worlds.get(id) : undefined;
+    if (!w || !w.spec.districts.length) return;
+    const placements = moonLayout(w.spec.id, w.radius, w.spec.districts);
+    const material = new THREE.ShaderMaterial({ vertexShader: MOON_VERT, fragmentShader: MOON_FRAG });
+    const dense = placements.length > 14;
+    const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, dense ? 16 : 20, dense ? 10 : 12), material, placements.length);
+    const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    const rotation = new THREE.Quaternion();
+    placements.forEach((p, i) => {
+      position.copy(w.pos).add(new THREE.Vector3(p.x, p.y, p.z));
+      matrix.compose(position, rotation, scale.setScalar(p.radius));
+      mesh.setMatrixAt(i, matrix);
+      mesh.setColorAt(i, color.set(w.spec.districts[i].color).lerp(new THREE.Color("#a1a1aa"), 0.22));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    mesh.userData.worldId = w.spec.id;
+    this.worldGroup.add(mesh);
+    const labels = new MoonLabels(w.spec.districts.map((d) => ({ slug: d.slug, name: d.label, count: d.count, unit: d.count === 1 ? w.spec.companyLabels.one : w.spec.companyLabels.many })),
+      (slug) => {this.setDistrict(slug);this.hooks.onPick(w.spec.id, slug);},
+      (slug) => {
+        const moons = this.moons;
+        if (!moons || moons.worldId !== w.spec.id) return;
+        const index = slug ? placements.findIndex((p) => p.slug === slug) : -1;
+        const hover = index < 0 ? null : index;
+        if (moons.hover === hover) return;
+        moons.hover = hover;this.updateMoonLabel();this.invalidate();
+      }, this.canvas);
+    if (this.host) this.host.appendChild(labels.root);
+    this.moons = { worldId: w.spec.id, mesh, placements, labels, hover: null, selected: null };
+    this.labelsNeedLayout = true;
+  }
+
+  private clearMoons(): void {
+    if (!this.moons) return;
+    const { mesh, labels } = this.moons;
+    mesh.removeFromParent();
+    mesh.geometry.dispose();
+    (mesh.material as THREE.Material).dispose();
+    mesh.dispose();
+    labels.dispose();
+    this.moons = null;
+    this.labelsNeedLayout = true;
+  }
+
+  private surfaceSize(): [number, number] {
+    return this.specs.length <= 20 ? [1024, 512] : this.specs.length <= 80 ? [512, 256] : [256, 128];
+  }
+
+  /** Spend texture detail on the planet being inspected; release it when the view moves on. */
+  private resizeSurface(world: WorldObject, width: number, height: number): void {
+    if (world.surface.canvas.width === width && world.surface.canvas.height === height) return;
+    const [canvas, ctx] = cpuCanvas(width, height);
+    paintSurface(ctx, width, height, { id: world.spec.id, accent: world.spec.accent, districts: world.spec.districts, companies: world.spec.companies, dim: world.spec.dim });
+    const texture = this.canvasTexture(canvas);
+    texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    const previous = world.surface.texture;
+    world.surface = { canvas, ctx, texture };
+    world.material.uniforms.uMap.value = texture;
+    previous.dispose();
+  }
+
+  private updateMoonLabel(): void {
+    const moons = this.moons;
+    if (!moons) return;
+    const w = this.worlds.get(moons.worldId);
+    if (w) {
+      const color = new THREE.Color();
+      const neutral = new THREE.Color("#a1a1aa");
+      const white = new THREE.Color("#ffffff");
+      moons.placements.forEach((p, i) => {
+        color.set(w.spec.districts[i].color).lerp(neutral, 0.22);
+        if (p.slug === moons.selected) color.lerp(white, 0.78);
+        else if (i === moons.hover) color.lerp(white, 0.3);
+        moons.mesh.setColorAt(i, color);
+      });
+      if (moons.mesh.instanceColor) moons.mesh.instanceColor.needsUpdate = true;
+    }
+    moons.labels.setSelected(moons.selected);
+  }
+
   /** After a context restore: every canvas is painted again and uploaded. */
   private repaintAll(): void {
-    paintNebula(this.sky.ctx, this.sky.canvas.width, this.sky.canvas.height);
+    paintAurora(this.sky.ctx, this.sky.canvas.width, this.sky.canvas.height);
     this.sky.texture.needsUpdate = true;
     paintGlow(this.glow.ctx, this.glow.canvas.width, GLOW_STOPS);
     this.glow.texture.needsUpdate = true;
@@ -915,7 +1174,10 @@ export class NexusEngine {
 
   /** A label's height on screen in CSS pixels, while the camera is near enough. */
   private labelPx(): number {
-    if (this.view.kind === "hero") return this.size.w < 720 ? 36 : 42;
+    if (this.view.kind === "hero") {
+      const scale = Math.min(1.5, Math.max(1, this.size.w / (2048 / 1.5)));
+      return this.size.w < 720 ? 36 : 42 * scale;
+    }
     return this.size.w < 720 ? 42 : 50;
   }
 
@@ -930,7 +1192,8 @@ export class NexusEngine {
 
   private heroFraming(azimuth: number) {
     const el = this.elevation("hero");
-    return { pos: this.orbitAt(this.fitDistance(el) * 0.95, el, azimuth), target: new THREE.Vector3() };
+    const scale = this.size.w >= 900 ? 0.8 : 0.95;
+    return { pos: this.orbitAt(this.fitDistance(el) * scale, el, azimuth), target: new THREE.Vector3() };
   }
 
   private overviewFraming(azimuth: number) {
@@ -948,7 +1211,8 @@ export class NexusEngine {
     // Mostly from the side, a little outward: the lit half and the core both in view.
     const dir = out.multiplyScalar(0.5).addScaledVector(side, 0.87).normalize();
     const { vw, vh, tan } = this.visible();
-    const d = Math.max(w.radius * 2.6, (w.radius * this.size.h) / (tan * 0.36 * Math.min(vw, vh)));
+    const moonExtent = this.moons?.worldId === id ? Math.max(w.radius, ...this.moons.placements.map((p) => p.orbit + p.radius)) : w.radius;
+    const d = Math.max(w.radius * 2.6, (w.radius * this.size.h) / (tan * 0.36 * Math.min(vw, vh)), (moonExtent * this.size.h) / (tan * 0.82 * Math.min(vw, vh)));
     const pos = w.pos
       .clone()
       .addScaledVector(dir, d * Math.cos(WORLD_ELEVATION))
@@ -1024,15 +1288,14 @@ export class NexusEngine {
 
   /** Input, drift and distance limits for the current view and motion preference. */
   private applyControls(): void {
-    const world = this.view.kind !== "hero";
-    if (world && !this.controlsConnected) {
+    if (!this.controlsConnected) {
       this.controls.connect(this.canvas);
       this.controlsConnected = true;
-    } else if (!world && this.controlsConnected) {
-      this.controls.disconnect();
-      this.controlsConnected = false;
     }
-    this.canvas.style.cursor = world ? "grab" : "";
+    const hero = this.view.kind === "hero";
+    this.controls.enableZoom = !hero;
+    this.canvas.style.touchAction = hero ? "pan-y pinch-zoom" : "none";
+    this.canvas.style.cursor = "grab";
     this.controls.enableDamping = !this.reduced;
     this.controls.autoRotateSpeed = this.view.kind === "hero" ? 0.35 : 0.22;
     const fit = this.fitDistance(this.elevation("overview"));
@@ -1070,13 +1333,18 @@ export class NexusEngine {
     const h = Math.max(1, this.host.clientHeight);
     if (w === this.size.w && h === this.size.h) return;
     this.size = { w, h };
+    // Preserve native pixels and use a bounded retina budget for fine surface and label detail.
+    const ratio = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5, Math.sqrt(8_000_000 / (w * h))));
+    this.renderer.setPixelRatio(ratio);
+    this.starMaterial.uniforms.uPixelRatio.value = ratio;
+    this.flowMaterial.uniforms.uPixelRatio.value = ratio;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.applyInsets(1);
     this.applyControls();
     // Keep the visitor's own camera; re-frame only a view they have not moved.
-    if (!this.flight && !this.interacting && (this.view.kind === "hero" || !this.userMoved)) this.frameView();
+    if (!this.flight && !this.interacting && !this.userMoved) this.frameView();
     this.invalidate();
   }
 
@@ -1093,10 +1361,16 @@ export class NexusEngine {
       }
     }
     const { w, h } = this.size;
-    const ox = (now.right - now.left) / 2;
-    const oy = (now.bottom - now.top) / 2;
-    if (Math.abs(ox) < 0.5 && Math.abs(oy) < 0.5) this.camera.clearViewOffset();
-    else this.camera.setViewOffset(w, h, ox, oy, w, h);
+    let ox = (now.right - now.left) / 2;
+    let oy = (now.bottom - now.top) / 2;
+    const centered = Math.abs(ox) < 0.5 && Math.abs(oy) < 0.5;
+    if (centered) { ox = 0;oy = 0; }
+    const previous = this.insetProjection;
+    if (previous.w !== w || previous.h !== h || previous.x !== ox || previous.y !== oy) {
+      if (centered) this.camera.clearViewOffset();
+      else this.camera.setViewOffset(w, h, ox, oy, w, h);
+      previous.w = w;previous.h = h;previous.x = ox;previous.y = oy;
+    }
     return moving;
   }
 
@@ -1106,10 +1380,21 @@ export class NexusEngine {
     this.running = false;
   }
 
+  private onVisibilityChange = (): void => {
+    if (document.hidden) this.stop();
+    else this.invalidate();
+  };
+
   private tick = (now: number): void => {
     this.raf = 0;
-    if (this.disposed || !this.host || !this.active) {
+    if (this.disposed || !this.host || !this.active || document.hidden) {
       this.running = false;
+      return;
+    }
+    // Input and camera damping use a 60 Hz ceiling; quiet ambient motion uses 24 Hz.
+    const interval = this.interacting || this.flight || now < this.idleUntil ? 1000 / 60 : 1000 / 24;
+    if (now - this.last < interval - 1) {
+      this.raf = requestAnimationFrame(this.tick);
       return;
     }
     const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
@@ -1124,10 +1409,11 @@ export class NexusEngine {
   /** Advances everything by dt seconds. Returns true while anything still moves. */
   private update(dt: number, now: number): boolean {
     let busy = false;
-    const animate = !this.reduced;
+    const animate = !this.reduced && this.view.kind !== "world";
     if (animate) {
       this.time += dt;
       this.flowMaterial.uniforms.uTime.value = this.time;
+      this.skyMaterial.uniforms.uTime.value = this.time;
       const [crystal, inner, cage] = this.coreSpin;
       crystal.rotation.y += dt * 0.25;
       crystal.rotation.x += dt * 0.08;
@@ -1135,9 +1421,9 @@ export class NexusEngine {
       cage.rotation.y += dt * 0.07;
       cage.rotation.z += dt * 0.03;
       this.rings.forEach((r, i) => (r.rotation.z += dt * (0.05 + i * 0.03) * (i % 2 ? -1 : 1)));
-      this.selectRing.rotation.y += dt * 0.4;
       busy = true;
     }
+    if (this.reduced) this.skyMaterial.uniforms.uTime.value = 0;
 
     if (this.applyInsets(this.reduced ? 1 : 1 - Math.exp(-dt * 7))) busy = true;
 
@@ -1158,7 +1444,7 @@ export class NexusEngine {
       }
       busy = true;
     } else {
-      const drift = animate && !this.interacting && (this.view.kind === "hero" || (this.view.kind === "overview" && now > this.idleUntil));
+      const drift = animate && !this.interacting && now > this.idleUntil && (this.view.kind === "hero" || this.view.kind === "overview");
       this.controls.autoRotate = drift;
       if (this.controls.update(dt)) busy = true;
     }
@@ -1174,15 +1460,23 @@ export class NexusEngine {
    */
   private updateLabels(dt: number): boolean {
     const { w: W, h: H } = this.size;
+    this.camera.updateMatrixWorld();
+    if (!this.labelsNeedLayout && !this.labelsFading && this.labelCamera.equals(this.camera.matrixWorld) && this.labelProjection.equals(this.camera.projectionMatrix)) return false;
+    this.labelsNeedLayout = false;
+    this.labelCamera.copy(this.camera.matrixWorld);
+    this.labelProjection.copy(this.camera.projectionMatrix);
     const tan = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
     const k = (this.labelPx() / H) * 2 * tan;
-    const near = Math.min(this.fitDistance(this.elevation("overview")) * 1.08, 150);
     const hero = this.view.kind === "hero";
+    // On narrow screens the fitted camera can stand beyond 150 units. Keep its labels legible.
+    const near = hero ? this.fitDistance(this.elevation("overview")) * 1.08 : Math.min(this.fitDistance(this.elevation("overview")) * 1.08, 150);
     const focus = this.view.kind === "world" ? this.view.id : null;
-    this.camera.updateMatrixWorld();
+    const moons = this.moons;
+    const ins = this.insetsGoal;
+    const area = { l: ins.left + 4, t: ins.top + 4, r: W - ins.right - 4, b: H - ins.bottom - 4 };
     const v = new THREE.Vector3();
     const items: { label: LabelObject; base: number; box: LabelBox; focused: boolean }[] = [];
-    const add = (id: string, label: LabelObject, anchor: THREE.Vector3, lift: number) => {
+    const add = (id: string, label: LabelObject, anchor: THREE.Vector3, lift: number, selectedMoon = false) => {
       const d = Math.max(0.001, this.camera.position.distanceTo(anchor));
       const height = k * Math.min(d, near);
       label.sprite.scale.set(height * label.aspect, height, 1);
@@ -1193,31 +1487,45 @@ export class NexusEngine {
       const x = ((v.x + 1) / 2) * W;
       const y = ((1 - v.y) / 2) * H;
       const pw = px * label.aspect;
-      const focused = id === focus;
-      label.sprite.renderOrder = focused ? 7 : 5;
+      const focused = id === focus || selectedMoon;
+      const cx = THREE.MathUtils.clamp(x, area.l + pw / 2, Math.max(area.l + pw / 2, area.r - pw / 2));
+      const cy = THREE.MathUtils.clamp(y, area.t + px, area.b);
+      // Sprite centers shift the label alone, so an edge planet keeps its label on screen.
+      label.sprite.center.set(0.5 + (x - cx) / Math.max(1, pw), (cy - y) / Math.max(1, px));
+      label.sprite.renderOrder = selectedMoon ? 8 : focused ? 7 : 5;
       items.push({
         label,
         focused,
-        base: behind ? 0 : smoothstep(18, 30, px),
-        box: { rect: { l: x - pw / 2, r: x + pw / 2, t: y - px, b: y }, priority: d, pinned: focused && !behind },
+        base: behind || x < -pw / 2 || x > W + pw / 2 || y < -px || y > H + px || px < 28 || (focus && (!focused || (moons?.placements.length ?? 0) > 14)) ? 0 : 1,
+        box: { rect: { l: cx - pw / 2, r: cx + pw / 2, t: cy - px, b: cy }, priority: selectedMoon ? -1 : d, pinned: !behind && (selectedMoon || (focused && !moons?.selected)) },
       });
     };
     for (const w of this.worlds.values()) add(w.spec.id, w.label, w.pos, w.radius + 0.35);
     if (this.coreLabel) add("core", this.coreLabel, new THREE.Vector3(), LAYOUT.coreRadius * 2.3);
-
-    const ins = this.insetsGoal;
-    const area = { l: ins.left + 4, t: ins.top + 4, r: W - ins.right - 4, b: H - ins.bottom - 4 };
-    const candidates = items.filter((it) => it.base > 0);
+    const candidates = items.filter((it) => it.base > 0 && !(hero && this.heroOverlay && overlaps(it.box.rect, this.heroOverlay)));
     const show = declutter(
       candidates.map((it) => it.box),
       area,
     );
     const allowed = new Set(candidates.filter((_, i) => show[i]).map((it) => it.label));
+    if (moons) {
+      const w = this.worlds.get(moons.worldId);
+      if (w) {
+        const anchors: MoonAnchor[] = [];
+        for (const p of moons.placements) {
+          v.set(w.pos.x + p.x, w.pos.y + p.y, w.pos.z + p.z);
+          const d = Math.max(.001, this.camera.position.distanceTo(v));
+          v.project(this.camera);
+          anchors.push({ slug: p.slug, x: (v.x + 1) * W / 2, y: (1 - v.y) * H / 2, radius: p.radius * H / (2 * tan * d) });
+        }
+        moons.labels.update(anchors, area, candidates.filter((it) => allowed.has(it.label)).map((it) => it.box.rect));
+      }
+    }
 
     let fading = false;
     const ease = this.reduced ? 1 : 1 - Math.exp(-dt * 10);
     for (const it of items) {
-      const target = allowed.has(it.label) ? it.base * (hero ? 0.9 : focus && !it.focused ? 0.7 : 1) : 0;
+      const target = allowed.has(it.label) ? it.base : 0;
       let next = it.label.opacity + (target - it.label.opacity) * ease;
       if (Math.abs(next - target) < 0.01) next = target;
       else fading = true;
@@ -1225,40 +1533,74 @@ export class NexusEngine {
       it.label.material.opacity = next;
       it.label.sprite.visible = next > 0.01;
     }
+    this.labelsFading = fading;
     return fading;
   }
 
   /* ---------- Picking ---------- */
 
   private pick(clientX: number, clientY: number): string | null {
+    this.pickedDistrict = undefined;
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const targets: THREE.Object3D[] = [this.coreHit];
+    const labels: THREE.Object3D[] = [];
+    let nearest = Infinity;
+    let picked: string | null = null;
+    const sphere = this.pickSphere, hitPoint = this.pickPoint;
+    const hitSphere = (center: THREE.Vector3, radius: number, id: string, district?: string) => {
+      sphere.center.copy(center);sphere.radius = radius;
+      if (!this.raycaster.ray.intersectSphere(sphere, hitPoint)) return;
+      const distance = this.raycaster.ray.origin.distanceToSquared(hitPoint);
+      if (distance >= nearest) return;
+      nearest = distance;picked = id;this.pickedDistrict = district;
+    };
+    if (this.core.visible) hitSphere(this.core.position, LAYOUT.coreRadius * 1.1, "core");
     for (const w of this.worlds.values()) {
-      targets.push(w.mesh);
-      if (w.label.sprite.visible) targets.push(w.label.sprite);
+      if (w.mesh.visible) hitSphere(w.pos, w.radius, w.spec.id);
+      if (w.label.sprite.visible) labels.push(w.label.sprite);
     }
-    if (this.coreLabel?.sprite.visible) targets.push(this.coreLabel.sprite);
-    const hit = this.raycaster.intersectObjects(targets, false)[0];
-    return (hit?.object.userData.worldId as string | undefined) ?? null;
+    if (this.coreLabel?.sprite.visible) labels.push(this.coreLabel.sprite);
+    if (this.moons) {
+      const w = this.worlds.get(this.moons.worldId);
+      if (w) {
+        const center = this.pickCenter;
+        for (const p of this.moons.placements) {
+          center.set(w.pos.x + p.x, w.pos.y + p.y, w.pos.z + p.z);
+          hitSphere(center, p.radius, w.spec.id, p.slug);
+        }
+      }
+    }
+    const hit = this.raycaster.intersectObjects(labels, false)[0];
+    if (hit && hit.distance ** 2 < nearest) {
+      this.pickedDistrict = undefined;
+      picked = (hit.object.userData.worldId as string | undefined) ?? null;
+    }
+    return picked;
   }
 
   private onPointerDown = (e: PointerEvent): void => {
-    if (this.view.kind === "hero") return;
+    if (e.button !== 0) return;
     this.down = { x: e.clientX, y: e.clientY, t: performance.now() };
   };
 
   private onPointerUp = (e: PointerEvent): void => {
     const d = this.down;
     this.down = null;
-    if (!d || this.view.kind === "hero") return;
+    if (!d || e.button !== 0) return;
     if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 600) return;
-    this.hooks.onPick(this.pick(e.clientX, e.clientY));
+    const id = this.pick(e.clientX, e.clientY);
+    if (this.pickedDistrict) this.setDistrict(this.pickedDistrict);
+    this.hooks.onPick(id, this.pickedDistrict);
+  };
+
+  private onPointerCancel = (): void => {
+    this.down = null;
+    this.onPointerLeave();
   };
 
   private onPointerMove = (e: PointerEvent): void => {
-    if (this.view.kind === "hero" || e.pointerType !== "mouse" || e.buttons) return;
+    if (e.pointerType !== "mouse" || e.buttons) return;
     this.lastMove = e;
     if (this.hoverQueued) return;
     this.hoverQueued = true;
@@ -1267,6 +1609,15 @@ export class NexusEngine {
       const m = this.lastMove;
       if (!m || this.disposed) return;
       const id = this.pick(m.clientX, m.clientY);
+      if (this.moons) {
+        const index = this.pickedDistrict ? this.moons.placements.findIndex((p) => p.slug === this.pickedDistrict) : -1;
+        const hover = index < 0 ? null : index;
+        if (this.moons.hover !== hover) {
+          this.moons.hover = hover;
+          this.updateMoonLabel();
+          this.invalidate();
+        }
+      }
       const world = id && id !== "core" ? id : null;
       this.canvas.style.cursor = id ? "pointer" : "grab";
       if (world !== this.hoverId) {
@@ -1279,6 +1630,11 @@ export class NexusEngine {
 
   private onPointerLeave = (): void => {
     this.lastMove = null;
+    if (this.moons && this.moons.hover !== null) {
+      this.moons.hover = null;
+      this.updateMoonLabel();
+      this.invalidate();
+    }
     if (this.hoverId) {
       this.hoverId = null;
       this.placeRings();
