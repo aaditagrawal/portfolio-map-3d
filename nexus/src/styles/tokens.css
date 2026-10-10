@@ -1,52 +1,58 @@
-/* The Nexus's design tokens, after Vercel's Geist design system (https://vercel.com/geist): the
-   Geist Sans and Geist Mono typefaces, Geist's dark gray scale and its 6px control radius. The one
-   accent is the Nexus's own cyan, in the role Geist gives blue: links, focus and the mark.
-   Every color the DOM uses is here; tokens.test.ts checks the text pairs for WCAG AA. The 3D
-   scene paints with its own values (three/paint.ts and three/engine.ts). */
+/* Zinc surfaces; DM Sans body, Instrument Sans headings, DM Mono counts. */
 :root {
   color-scheme: dark;
 
-  --font: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --font: "DM Sans", system-ui, sans-serif;
+  --heading: "Instrument Sans", "DM Sans", system-ui, sans-serif;
+  --mono: "DM Mono", ui-monospace, monospace;
+  --text-heading: clamp(28px, 3.2vw, 40px);
+  --text-body: 16px;
+  --text-detail: 13px;
+  --line-heading: 1.2;
+  --line-body: 1.5;
+  --line-detail: 1.5;
+  --type-heading: 500 var(--text-heading) / var(--line-heading) var(--heading);
+  --type-body: 400 var(--text-body) / var(--line-body) var(--font);
+  --type-detail: 400 var(--text-detail) / var(--line-detail) var(--font);
 
-  /* Grounds: Geist background-200 and -100, gray-100 and -300, gray-alpha-200 */
-  --bg: #000000;
-  --bg-deep: #000000;
-  --surface: #0a0a0a;
-  --surface-2: #1a1a1a;
-  --surface-3: #292929;
-  --glass: rgba(10, 10, 10, 0.86);
-  --glass-strong: rgba(10, 10, 10, 0.94);
+  /* Shared neutral surfaces. */
+  --bg: #0f0f0f;
+  --bg-deep: #090909;
+  --surface: #18181b;
+  --surface-2: #27272a;
+  --surface-3: #3f3f46;
+  --glass: rgba(15, 15, 15, 0.94);
+  --glass-strong: rgba(15, 15, 15, 0.98);
   --hover: rgba(255, 255, 255, 0.09);
   --logo-plate: #ffffff;
-  --scrim-strong: rgba(0, 0, 0, 0.88);
-  --scrim: rgba(0, 0, 0, 0.6);
-  --scrim-clear: rgba(0, 0, 0, 0);
+  --scrim-strong: rgba(9, 9, 9, 0.94);
+  --scrim: rgba(9, 9, 9, 0.65);
+  --scrim-clear: rgba(9, 9, 9, 0);
 
-  /* Borders: Geist gray-alpha-400 and -500 */
-  --border: rgba(255, 255, 255, 0.14);
-  --border-strong: rgba(255, 255, 255, 0.24);
+  /* Shared neutral surfaces. */
+  --border: rgba(161, 161, 170, 0.16);
+  --border-strong: rgba(161, 161, 170, 0.32);
 
-  /* Text: Geist gray-1000, -900 and -700 */
-  --text: #ededed;
-  --text-muted: #a1a1a1;
-  --text-faint: #8f8f8f;
-  --link: #6ff0ff;
+  /* Shared neutral surfaces. */
+  --text: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --text-faint: #a1a1aa;
+  --link: #e4e4e7;
 
-  /* Buttons: Geist's primary button is the high-contrast neutral */
-  --primary: #ededed;
-  --primary-hover: #cccccc;
-  --primary-ink: #0a0a0a;
+  /* Shared neutral surfaces. */
+  --primary: #e4e4e7;
+  --primary-hover: #f4f4f5;
+  --primary-ink: #18181b;
 
-  /* The one accent: links, focus, the mark */
-  --accent: #3be8ff;
-  --accent-hover: #8af2ff;
-  --accent-ink: #00141c;
-  --accent-soft: rgba(59, 232, 255, 0.13);
-  --accent-glow: rgba(59, 232, 255, 0.35);
-  --accent-line: rgba(59, 232, 255, 0.42);
+  /* Neutral controls; the 3D worlds carry the color */
+  --accent: #d4d4d8;
+  --accent-hover: #f4f4f5;
+  --accent-ink: #090909;
+  --accent-soft: rgba(161, 161, 170, 0.13);
+  --accent-glow: rgba(161, 161, 170, 0.35);
+  --accent-line: rgba(161, 161, 170, 0.42);
   --flash: rgba(200, 250, 255, 0.85);
-  --focus: #8af2ff;
+  --focus: #f4f4f5;
 
   /* Decoration only (never text) */
   --violet: #9d7bff;
@@ -64,7 +70,7 @@
   --problem: #ffa8a8;
   --unreachable: #ffd27f;
 
-  /* Shape and space: Geist's 6px controls, 12px cards and 16px floating panels */
+  /* Shared neutral surfaces. */
   --radius-s: 6px;
   --radius: 12px;
   --radius-l: 16px;

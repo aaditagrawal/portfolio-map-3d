@@ -1,6 +1,5 @@
-/* The landing page: the hero over the live Nexus, then short sections. Type follows Geist's
-   scale (heading-72, -40, -32, -20 and -16; copy-18, -16, -14 and -13); grids of short items are
-   one bordered panel divided by hairlines, as in Geist's own pages. */
+/* The interactive universe leads; copy anchors the lower-left desktop corner.
+   Both views share the three type styles and zinc surfaces in tokens.css. */
 
 .site-header {
   position: absolute;
@@ -35,9 +34,10 @@
 
 .brand-name {
   white-space: nowrap;
-  font-size: 16px;
+  font-size: var(--text-body);
   font-weight: 600;
   letter-spacing: -0.02em;
+  font-family: var(--heading);
 }
 
 .site-nav {
@@ -57,13 +57,15 @@
   padding: 0 12px;
   border-radius: var(--radius-s);
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--text-detail);
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
   transition:
     background-color 0.15s,
     color 0.15s;
+
+  font-family: var(--mono);
 }
 
 .nav-link:hover {
@@ -82,8 +84,8 @@
     padding: 0 10px;
   }
 
-  /* With the sample badge, the header keeps room for it; GitHub stays in the footer. */
-  .site-nav:has(.sample-badge) .nav-github {
+  /* GitHub remains available in the hero and footer on narrow screens. */
+  .site-nav .nav-github {
     display: none;
   }
 }
@@ -91,19 +93,23 @@
 /* ---------- Hero ---------- */
 
 .hero {
+  --sky-blend: clamp(160px, 22svh, 240px);
   position: relative;
   isolation: isolate;
   display: flex;
-  align-items: center;
-  height: clamp(640px, 100svh, 960px);
+  align-items: flex-end;
+  min-height: 600px;
+  height: 100svh;
   overflow: hidden;
-  background: var(--bg-deep);
+  background: transparent;
 }
 
 .hero-scene {
   position: absolute;
   z-index: 0;
   inset: 0;
+  /* Reveal the same page sky before the next section begins. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sky-blend)), transparent);
 }
 
 .hero-scene canvas,
@@ -129,99 +135,59 @@
   z-index: 1;
   inset: 0;
   pointer-events: none;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sky-blend)), transparent);
   background:
-    linear-gradient(90deg, var(--scrim-strong) 0%, var(--scrim) 32%, var(--scrim-clear) 58%),
-    linear-gradient(0deg, var(--bg) 0%, var(--scrim-clear) 22%);
+    radial-gradient(ellipse at 0% 100%, var(--scrim-strong) 0%, var(--scrim) 28%, var(--scrim-clear) 62%),
+    linear-gradient(0deg, var(--bg) 0%, var(--scrim-clear) 20%);
 }
 
 .hero-inner {
   position: relative;
   z-index: 2;
   width: 100%;
-  max-width: 1160px;
-  margin: 0 auto;
-  padding: 96px var(--gutter) 64px;
+  padding: 112px var(--gutter) 40px;
+  pointer-events: none;
 }
 
 .hero-text {
-  max-width: 640px;
+  max-width: 480px;
+  pointer-events: auto;
 }
 
-/* Geist heading-72, one line per half: sized so "one shared universe." fits from 320px up. */
+/* Shared type style. */
 .hero h1 {
-  font-size: clamp(32px, 10vw, 72px);
-  line-height: 1;
-  letter-spacing: -0.06em;
+  font: var(--type-heading);
+  letter-spacing: -0.03em;
 }
 
 .hero h1 > span {
   display: block;
 }
 
-/* Geist copy-18 */
+/* Shared type style. */
 .lede {
   max-width: 52ch;
-  margin-top: 24px;
+  margin-top: 16px;
   color: var(--text-muted);
-  font-size: 18px;
-  line-height: 28px;
+  font-size: var(--text-body);
+  line-height: var(--line-body);
 }
 
 .cta-row {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 32px;
+  margin-top: 24px;
 }
 
-/* The hero's call to action in the orb's colors, cyan into violet, with a shimmer that crosses
-   it now and then: drawn between the button's color and its label, and off under reduced motion. */
+/* Neutral controls leave the scene's worlds as the brightest objects. */
 .btn-orb {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background: linear-gradient(110deg, var(--accent) 0%, var(--orb-glow) 22%, var(--violet) 50%, var(--orb-glow) 78%, var(--accent) 100%);
-  background-position: 0% 50%;
-  background-size: 200% 100%;
-  color: var(--accent-ink);
-  box-shadow: 0 10px 36px -14px var(--accent-glow);
-  transition:
-    background-position 0.6s var(--ease),
-    box-shadow 0.2s;
+  background: var(--primary);
+  color: var(--primary-ink);
 }
 
 .btn-orb:hover {
-  background-position: 100% 50%;
-  box-shadow: 0 12px 40px -12px var(--accent-glow);
-}
-
-.btn-orb::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.6) 50%, transparent 70%);
-  transform: translateX(-120%);
-  animation: shimmer 3.6s var(--ease) 1s infinite;
-  pointer-events: none;
-}
-
-@keyframes shimmer {
-  0% {
-    transform: translateX(-120%);
-  }
-
-  40%,
-  100% {
-    transform: translateX(120%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .btn-orb::after {
-    display: none;
-    animation: none;
-  }
+  background: var(--primary-hover);
 }
 
 /* A square button around one icon (the GitHub mark). */
@@ -247,15 +213,48 @@
   align-items: center;
   gap: 4px 16px;
   min-height: 20px;
-  margin-top: 24px;
+  margin-top: 16px;
   color: var(--text-muted);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--text-detail);
+  line-height: var(--line-detail);
+
+  font-family: var(--mono);
+}
+
+.hero-tools {
+  position: absolute;
+  z-index: 3;
+  right: calc(var(--gutter) + 64px);
+  bottom: 40px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hero-hint {
+  color: var(--text-muted);
+  font: var(--type-detail);
+}
+
+.hero-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.hero-controls .icon-btn {
+  background: var(--surface);
+}
+
+.hint-touch { display: none; }
+
+@media (pointer: coarse) {
+  .hint-touch { display: inline; }
+  .hint-desktop { display: none; }
 }
 
 @media (max-width: 899px) {
   .hero {
-    align-items: flex-end;
+    min-height: 720px;
   }
 
   .hero-scrim {
@@ -268,11 +267,11 @@
     padding-bottom: 40px;
   }
 
-  /* Geist copy-16 */
+  /* Shared type style. */
   .lede {
     margin-top: 16px;
-    font-size: 16px;
-    line-height: 24px;
+    font-size: var(--text-body);
+    line-height: var(--line-body);
   }
 
   .cta-row {
@@ -282,12 +281,25 @@
   .hero-meta {
     margin-top: 20px;
   }
+
+  .hero-tools {
+    top: 76px;
+    bottom: auto;
+    left: var(--gutter);
+    right: var(--gutter);
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .hero-hint { max-width: 24ch; }
+  .hint-touch { display: inline; }
+  .hint-desktop { display: none; }
 }
 
 /* ---------- Sections ---------- */
 
 .section {
-  padding: 96px 0;
+  padding: 48px 0;
   border-top: 1px solid var(--border);
 }
 
@@ -295,11 +307,11 @@
   border-top: 0;
 }
 
-/* Geist heading-40 */
+/* Shared type style. */
 .section h2 {
-  font-size: 40px;
-  line-height: 48px;
-  letter-spacing: -0.06em;
+  font-size: var(--text-heading);
+  line-height: var(--line-heading);
+  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 
@@ -315,130 +327,53 @@
   max-width: 60ch;
   margin-top: 12px;
   color: var(--text-muted);
-  font-size: 18px;
-  line-height: 28px;
+  font-size: var(--text-body);
+  line-height: var(--line-body);
 }
 
 .section-note {
   color: var(--text-muted);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--text-detail);
+  line-height: var(--line-detail);
+
+  font-family: var(--mono);
 }
 
 .section-body,
 .section .net {
-  margin-top: 40px;
+  margin-top: 24px;
 }
 
 @media (max-width: 719px) {
   .section {
-    padding: 64px 0;
+    padding: 40px 0;
   }
 
-  /* Geist heading-32 */
+  /* Shared type style. */
   .section h2 {
-    font-size: 32px;
-    line-height: 40px;
+    font-size: var(--text-heading);
+    line-height: var(--line-heading);
     letter-spacing: -0.04em;
   }
 
   .section-lede {
-    font-size: 16px;
-    line-height: 24px;
+    font-size: var(--text-body);
+    line-height: var(--line-body);
   }
 
   .section-body,
   .section .net {
-    margin-top: 32px;
+    margin-top: 24px;
   }
 }
 
-/* One panel, divided by hairlines: the gaps show the panel's border color. */
-.panel-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1px;
-  margin: 40px 0 0;
-  padding: 0;
-  overflow: hidden;
-  list-style: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--border);
-}
-
-.section-lede + .panel-grid {
-  margin-top: 32px;
-}
-
-.panel-grid > li {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  padding: 24px;
-  background: var(--surface);
-}
-
-@media (min-width: 720px) {
-  .panel-grid-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .panel-grid-4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1000px) {
-  .panel-grid-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-/* Geist heading-16 and copy-14 */
-.panel-grid h3 {
-  font-size: 16px;
-  line-height: 24px;
-  letter-spacing: -0.02em;
-}
-
-.panel-grid p {
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-/* Short inline code (a file name, a command) never breaks across lines. */
-.section p code {
-  white-space: nowrap;
-}
-
-.item-icon {
-  margin-bottom: 8px;
-  color: var(--accent);
-}
-
-/* Geist label-13-mono */
-.step-n {
-  margin-bottom: 8px;
-  color: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.caption {
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-/* Geist copy-13: short notes beside what they qualify */
+/* Shared type style. */
 .fine {
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: var(--text-detail);
+  line-height: var(--line-detail);
+
+  font-family: var(--mono);
 }
 
 /* ---------- The video ---------- */
@@ -447,7 +382,7 @@
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  margin-top: 40px;
+  margin-top: 24px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-deep);
@@ -461,23 +396,16 @@
   gap: 8px 24px;
   margin-top: 16px;
   color: var(--text-muted);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--text-detail);
+  line-height: var(--line-detail);
+
+  font-family: var(--mono);
 }
 
 @media (max-width: 719px) {
   .promo-video {
-    margin-top: 32px;
+    margin-top: 24px;
   }
-}
-
-/* ---------- How a map joins ---------- */
-
-.how-check {
-  display: grid;
-  gap: 12px;
-  max-width: 640px;
-  margin-top: 32px;
 }
 
 /* ---------- Get started ---------- */
@@ -491,7 +419,7 @@
 @media (min-width: 900px) {
   .start {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    gap: 64px;
+    gap: 32px;
   }
 }
 
@@ -504,81 +432,55 @@
   color: var(--text-muted);
 }
 
-/* ---------- Services ---------- */
+/* ---------- Setup and services ---------- */
 
-/* Geist heading-20 */
-.package h3 {
-  font-size: 20px;
-  line-height: 26px;
-}
+.setup-links { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.setup-links a { min-height: var(--touch); font: var(--type-detail); }
+.start-command { display: grid; min-width: 0; gap: 12px; }
 
-.includes {
+.service-list {
   display: grid;
-  gap: 8px;
-  margin: 8px 0 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 32px;
+  margin: 24px 0 0;
   padding: 0;
   list-style: none;
-  font-size: 14px;
-  line-height: 20px;
+}
+.package { display: grid; align-content: start; min-width: 0; gap: 8px; }
+.package h3 { font-size: var(--text-body); line-height: var(--line-body); }
+.package > p { color: var(--text-muted); font: var(--type-body); }
+.package-details { font: var(--type-detail); color: var(--text-muted); }
+.package-details summary { display: flex; align-items: start; gap: 16px; min-height: var(--touch); padding: 8px 0; list-style: none; cursor: pointer; }
+.package-details summary::-webkit-details-marker { display: none; }
+.package-details summary > svg { flex: none; margin-top: 4px; }
+.package-details[open] summary > svg { transform: rotate(180deg); }
+.package-overview { display: grid; flex: 1; gap: 8px; font: var(--type-body); }
+.package-name { color: var(--text); font: 500 var(--text-body) / var(--line-body) var(--heading); }
+.includes { display: grid; gap: 8px; margin: 0; padding: 0 0 8px; list-style: none; }
+.includes li { display: flex; align-items: start; gap: 8px; }
+.include-icon { flex: none; margin-top: 2px; }
+.package .btn { justify-self: start; }
+.wg-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-top: 24px; }
+.wg-cta .fine { max-width: 48ch; }
+@media (max-width: 519px) {
+  .service-list { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 }
 
-.includes li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.include-icon {
-  flex: none;
-  margin-top: 2px;
-  color: var(--accent);
-}
-
-.panel-grid .package-price {
-  margin-top: auto;
-  padding-top: 16px;
-  color: var(--text);
-  font-weight: 500;
-}
-
-.package .btn {
-  align-self: flex-start;
-}
-
-/* An add-on: after the packages, across the whole row. */
-.panel-grid > .is-addon {
-  grid-column: 1 / -1;
-}
-
-@media (min-width: 900px) {
-  .is-addon .includes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px 24px;
+@media (max-width: 899px), (pointer: coarse) {
+  .package-details {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--surface) 76%, transparent);
   }
-}
-
-/* Geist label-13-mono, like the step numbers */
-.panel-grid .package-kicker {
-  color: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.package-example {
-  margin-top: 4px;
-}
-
-.wg-cta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 24px;
-  margin-top: 32px;
-}
-
-.wg-cta .fine {
-  max-width: 48ch;
+  .package-details summary { padding: 16px; border-radius: var(--radius); }
+  .package-details summary:active { background: var(--hover); }
+  .package-details summary:focus-visible { outline-offset: -3px; }
+  .package-details[open] summary {
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: var(--hover);
+  }
+  .package-details .includes { padding: 16px; }
 }
 
 /* ---------- Footer ---------- */
@@ -587,8 +489,10 @@
   padding: 24px 0 48px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--text-detail);
+  line-height: var(--line-detail);
+
+  font-family: var(--mono);
 }
 
 .footer-inner {
@@ -610,6 +514,8 @@
   gap: 8px;
   color: var(--text);
   font-weight: 600;
+  min-height: var(--touch);
+  text-decoration: none;
 }
 
 .footer-links {
@@ -628,4 +534,57 @@
 
 .footer-links a:hover {
   color: var(--text);
+}
+
+.nav-link,
+.hero-meta,
+.section-note,
+.fine,
+.video-meta,
+.site-footer {
+  font-family: var(--font);
+}
+
+/* Match the desktop reference at 2048px, with the same proportions on smaller laptops. */
+@media (min-width: 900px) {
+  .site-header, #content, .site-footer {
+    --desktop-unit: clamp(1px, calc(100vw / 1365.333333), 1.5px);
+    --text-heading: calc(40 * var(--desktop-unit));
+    --text-body: calc(16 * var(--desktop-unit));
+    --text-detail: calc(13 * var(--desktop-unit));
+    --gutter: calc(32 * var(--desktop-unit));
+    --badge-unit: var(--desktop-unit);
+    --touch: calc(44 * var(--desktop-unit));
+    --type-heading: 500 var(--text-heading) / var(--line-heading) var(--heading);
+    --type-body: 400 var(--text-body) / var(--line-body) var(--font);
+    --type-detail: 400 var(--text-detail) / var(--line-detail) var(--font);
+    font-size: var(--text-body);
+  }
+  .site-header-inner, #content .container, .site-footer .container {
+    max-width: calc(1160 * var(--desktop-unit));
+  }
+  .site-header-inner { padding-block: calc(10 * var(--desktop-unit)); }
+  .brand { gap: calc(10 * var(--desktop-unit)); }
+  .brand-mark { width: calc(28 * var(--desktop-unit)); height: calc(28 * var(--desktop-unit)); }
+  .nav-link { padding-inline: calc(12 * var(--desktop-unit)); }
+  .hero-inner { padding: calc(112 * var(--desktop-unit)) var(--gutter) calc(40 * var(--desktop-unit)); }
+  .hero-text { max-width: calc(480 * var(--desktop-unit)); }
+  .lede { margin-top: calc(16 * var(--desktop-unit)); }
+  .cta-row { gap: calc(12 * var(--desktop-unit)); margin-top: calc(24 * var(--desktop-unit)); }
+  #content .btn { padding-inline: calc(16 * var(--desktop-unit)); gap: calc(8 * var(--desktop-unit)); }
+  #content .btn svg, .hero-controls svg { width: calc(20 * var(--desktop-unit)); height: calc(20 * var(--desktop-unit)); }
+  .hero-meta { margin-top: calc(20 * var(--desktop-unit)); }
+  .hero-tools { bottom: calc(32 * var(--desktop-unit)); gap: calc(16 * var(--desktop-unit)); }
+  .hero-controls { gap: calc(4 * var(--desktop-unit)); }
+  #content .icon-btn { width: var(--touch); height: var(--touch); }
+  #content .section { padding-block: calc(48 * var(--desktop-unit)); }
+  #content .net-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(330 * var(--desktop-unit))), 1fr));
+    gap: calc(16 * var(--desktop-unit));
+  }
+  #content .net-card { padding: calc(24 * var(--desktop-unit)); gap: calc(24 * var(--desktop-unit)); }
+  #content .world-pill { gap: calc(10 * var(--desktop-unit)); padding: calc(6 * var(--desktop-unit)) calc(14 * var(--desktop-unit)) calc(6 * var(--desktop-unit)) calc(6 * var(--desktop-unit)); }
+  #content .count-board { gap: calc(20 * var(--desktop-unit)) calc(24 * var(--desktop-unit)); }
+  #content .count-metric { gap: calc(8 * var(--desktop-unit)); }
+  #content .code pre { padding: calc(12 * var(--desktop-unit)) calc(96 * var(--desktop-unit)) calc(12 * var(--desktop-unit)) calc(16 * var(--desktop-unit)); }
 }

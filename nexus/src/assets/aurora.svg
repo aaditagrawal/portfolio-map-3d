@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" fill="none">
+  <defs>
+    <linearGradient id="rose" x1="250" y1="200" x2="1200" y2="650" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fb7185" stop-opacity="0"/><stop offset=".4" stop-color="#fb7185" stop-opacity=".65"/><stop offset=".7" stop-color="#fb923c" stop-opacity=".45"/><stop offset="1" stop-color="#fb923c" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="130" y1="350" x2="1250" y2="400" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fde047" stop-opacity="0"/><stop offset=".5" stop-color="#fde047" stop-opacity=".4"/><stop offset="1" stop-color="#fb923c" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="haze" x="-30%" y="-70%" width="160%" height="240%"><feGaussianBlur stdDeviation="28"/></filter>
+    <filter id="seam" x="-30%" y="-70%" width="160%" height="240%"><feGaussianBlur stdDeviation="10"/></filter>
+  </defs>
+  <g filter="url(#haze)">
+    <path d="M100 540C350 360 510 700 780 480S1090 260 1360 350" stroke="url(#rose)" stroke-width="100"/>
+    <path d="M50 370C300 260 460 550 740 360S1110 610 1390 420" stroke="url(#gold)" stroke-width="68"/>
+  </g>
+  <path d="M100 560C350 390 510 720 780 510S1090 280 1360 370" stroke="url(#rose)" stroke-width="12" filter="url(#seam)"/>
+</svg>

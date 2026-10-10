@@ -1,0 +1,22 @@
+/* A quiet continuation of the sky behind the page content. */
+body { isolation: isolate; }
+body::before { z-index: -1; }
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: url("../assets/aurora.svg") center / cover no-repeat;
+  opacity: .22;
+  animation: aurora-drift 36s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes aurora-drift {
+  from { transform: translate3d(-2%, -1%, 0) rotate(-2deg) scale(1.04); }
+  to { transform: translate3d(2%, 2%, 0) rotate(2deg) scale(1.08); }
+}
+html.in-world body::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  body::after { animation: none; will-change: auto; }
+}
