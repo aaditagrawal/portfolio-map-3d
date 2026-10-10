@@ -9,6 +9,10 @@ incubator's members, a fund's portfolio, a community's startups) as a 3D map wit
 | **Walk** | Your own explorer on an island: the organization's hub on a central plaza, a neighborhood per district, a drop pin and badge for every company. Walk up to one and its details slide up. Other visitors can walk there with you, live. A portal on the plaza leads to the Nexus. |
 | **List** | The same records as a searchable, filterable directory. No 3D required; every record is reachable here. |
 
+In Walk, use WASD or the arrow keys to move, Shift to run, and Space for a long jump.
+Press F or use the car button to summon a vehicle, get in, or get out. Touch controls provide
+the same travel actions. The renderer follows the map's light or dark theme.
+
 Plus a **provider finder** ("is there a company here that can do this for me?"), search, deep
 links for everything, and a strict, provenance-first data contract.
 

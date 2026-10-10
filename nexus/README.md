@@ -84,10 +84,9 @@ address after a move).
 ## Configure
 
 `src/config.ts` holds the landing page's "Services" section (`#built-for-you`): the provider,
-where requests go (`intake`: an email address, today jeremy@embarccollective.com, which "Request a
-setup" opens as an email with the request's questions filled in; or an https form, and a GitHub
+where requests go (`intake`: an email address, today jeremy@embarccollective.com, which "Request help" opens as an email with the request's questions filled in; or an https form, and a GitHub
 form shows a note that requests are public), an optional note, and the packages (a `price` of
-`null` reads "Quoted per organization", said once when no package has a price; a `checkoutUrl`
+`null` reads "Price on request", said once when no package has a price; a `checkoutUrl`
 adds a "Book" button). `config.test.ts` checks it.
 
 It also names the promo video under the hero (`PROMO_VIDEO`; the cuts and their cover are served
@@ -97,11 +96,30 @@ takes either one off the page.
 
 ## Design
 
-The Nexus follows Vercel's published design system, [Geist](https://vercel.com/geist): the Geist
-Sans and Geist Mono typefaces (from Google Fonts, under the SIL Open Font License), Geist's dark
-gray scale, its type scale and its 6px control radius. The Nexus's cyan takes the place Geist gives
-blue: links, focus and the mark. `src/styles/tokens.css` holds every value. The copy is short,
-factual and in the third person; notes that qualify something sit beside it in one short line.
+The UI uses zinc surfaces centered on `#0f0f0f`, neutral controls, and Lucide interface icons.
+DM Sans is the body typeface. Instrument Sans is used for headings, Geist Mono for commands,
+and DM Mono for the count boards.
+`src/styles/tokens.css` defines three shared type styles: responsive headings and numbers
+(28–40px), body copy (16px), and detail labels (13px). On desktop these scale with the viewport,
+up to 60px, 24px and 19.5px at 2048px wide. Text contrast is checked by
+`tokens.test.ts`. World identity is a name-and-logo pill; network items show split-flap
+counts and links to the map and its publisher.
+
+The landing universe supports orbiting and selecting worlds. Zoom and reset controls
+are available beside it. The wheel and vertical touch swipes scroll the page; horizontal
+swipes orbit the hero. The copy sits at the lower-left on desktop and below the framed
+universe on narrow screens. Below it are the map list, a short setup section and expandable
+service descriptions. A static star field continues behind the page.
+
+A selected planet shows its districts as moons. Selecting a moon filters the directory;
+category controls update the selected moon. Categories use Lucide icons and short labels,
+and company descriptions expand on request.
+
+The scene uses one instanced mesh for moons, lower sphere geometry, and a backing-pixel
+budget of 8 million at DPR up to 2.5. Ambient rendering runs at up to 24 fps; interaction
+runs at up to 60 fps. Planet shaders combine an overhead light, light from the core and a
+subtle rim. Camera projections and moon label layouts are reused while their inputs stay unchanged.
+Warm aurora curtains and stars continue from the hero through the rest of the page.
 
 The mark is the world's core drawn flat: a crystal in a geodesic cage, a ring and a glow
 (`src/lib/mark.ts`). The page (`Mark` in `components/Icons.tsx`), the core's label in the 3D scene
@@ -132,8 +150,8 @@ src/
                      surface (what a world's surface shows), search, declutter (labels),
                      route, hud (the HUD's geometry), copy, color, mark (the logo's geometry)
   three/             engine (the scene), paint (every canvas), fromModel, cpuCanvas,
-                     contextWatch, webgl
-  styles/            tokens.css (every color; tokens.test.ts checks contrast), base, landing, world
+                     contextWatch, webgl, aurora, moonLabels, moonLayout
+  styles/            tokens.css (shared colors and type), base, landing, world, directory, aurora
   sample.ts          the fictional sample network (?sample only)
   config.ts          the Services section, the promo video and the music
   agent.ts           tools for AI agents (WebMCP): list_maps, search_network, open_map (docs/mcp.md)
