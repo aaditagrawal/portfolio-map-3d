@@ -38,6 +38,8 @@ export default defineConfig({
   // No environment variable reaches the browser by prefix: the Nexus needs none.
   envPrefix: "NEXUS_CLIENT_ENV_DISABLED_",
   server: {
+    host: "0.0.0.0",
+    allowedHosts: ["darkstar", "darkstar.walrus-pangolin.ts.net"],
     port: 5180,
     // ../federation (the protocol) and ../node_modules live outside the Vite root.
     fs: { allow: [repo] },

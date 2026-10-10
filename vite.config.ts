@@ -196,6 +196,10 @@ export default defineConfig(({ mode, command, isPreview }) => {
   return {
     // `vite preview` serves the build, so it takes the build's base.
     base: sitePath(isPreview ? "build" : command),
+    server: {
+      host: "0.0.0.0",
+      allowedHosts: ["darkstar", "darkstar.walrus-pangolin.ts.net"],
+    },
     plugins: [publicDataPlugin(), react(), sitePlugin()],
     // No environment variable reaches the browser by prefix (Vite would otherwise expose every VITE_*
     // variable, all at once wherever code reads import.meta.env as an object). Nothing uses this prefix.
