@@ -10,13 +10,14 @@ import { useReducedMotion } from "./hooks/useMedia.ts";
 import { useNetwork } from "./hooks/useNetwork.ts";
 import { navigate, useRoute } from "./hooks/useRoute.ts";
 import { coreSubtitle, engineWorlds } from "./three/fromModel.ts";
+import "./styles/aurora.css";
 
 export function App() {
   const route = useRoute();
   const reduced = useReducedMotion();
   const [attempt, setAttempt] = useState(0);
   const net = useNetwork(route.sample, attempt);
-  const pickRef = useRef<((id: string | null) => void) | null>(null);
+  const pickRef = useRef<((id: string | null, district?: string) => void) | null>(null);
   const { engine, status: gl } = useEngine(reduced, pickRef);
   const model = net.status === "ready" ? net.model : null;
 
@@ -43,5 +44,5 @@ export function App() {
   if (route.mode === "world") {
     return <WorldMode route={route} net={net} engine={engine} gl={gl} reduced={reduced} pickRef={pickRef} onRetry={() => setAttempt((n) => n + 1)} />;
   }
-  return <Landing route={route} net={net} engine={engine} gl={gl} onEnter={enter} />;
+  return <Landing route={route} net={net} engine={engine} gl={gl} onEnter={enter} pickRef={pickRef} />;
 }

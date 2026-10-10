@@ -45,12 +45,12 @@ export const WHITE_GLOVE: WhiteGlove = {
     {
       id: "setup",
       name: "Setup",
-      summary: "A map built and launched.",
+      summary: "Build and publish your map.",
       includes: [
-        "Districts, labels and theme set up",
-        "Companies imported from public sources, every source recorded",
-        "Deployed to the organization's domain",
-        "Joined to the network",
+        "Set your districts, labels and theme",
+        "Import company data and record its sources",
+        "Publish on your domain",
+        "Join the network",
       ],
       price: null,
       checkoutUrl: null,
@@ -59,12 +59,12 @@ export const WHITE_GLOVE: WhiteGlove = {
     },
     {
       id: "custom-world",
-      name: "Setup and custom world",
-      summary: "Setup, plus a walk world in the organization's look.",
+      name: "Custom world",
+      summary: "Setup with a walkable world in your branding.",
       includes: [
-        "The organization's building at the center of the walk world",
-        "Live explorers on the organization's own Realtime project",
-        "Link-preview image and favicon from its brand",
+        "Place your building at the center",
+        "Add live visitors on your Supabase project",
+        "Create a preview image and favicon from your branding",
       ],
       price: null,
       checkoutUrl: null,
@@ -73,9 +73,9 @@ export const WHITE_GLOVE: WhiteGlove = {
     },
     {
       id: "care",
-      name: "Care",
-      summary: "A map kept current.",
-      includes: ["New companies added with sources, on the organization's schedule", "Logos and descriptions refreshed", "Framework updates applied and the network check kept green"],
+      name: "Updates",
+      summary: "Keep your map current.",
+      includes: ["Add companies on your schedule, with sources", "Update logos and descriptions", "Apply framework updates and recheck network access"],
       price: null,
       checkoutUrl: null,
       addon: false,
@@ -83,12 +83,12 @@ export const WHITE_GLOVE: WhiteGlove = {
     },
     {
       id: "promo-video",
-      name: "Promo video",
-      summary: "A short video of the map, for the organization's site and social channels.",
+      name: "Map video",
+      summary: "Show your map on your website and social channels.",
       includes: [
-        "Filmed from the live map: its walk world, a company in it and its portal to the Nexus",
-        "A 16:9 cut and a 9:16 cut for Reels, TikTok and Shorts, each with a cover image",
-        "Captions in the map's own words, with its own counts",
+        "Record the walk view, a company and the Nexus portal",
+        "Landscape 16:9 and vertical 9:16 videos, each with a cover image",
+        "Use your map's names and counts in captions",
       ],
       price: null,
       checkoutUrl: null,
@@ -151,12 +151,14 @@ export function isPublicGitHubForm(url: string): boolean {
 export const EMAIL_PATTERN = /^[^\s@<>()"',;:]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 
 /** The request's subject and questions, as the email opens with them. */
-export const REQUEST_SUBJECT = "Setup request: <organization>";
+export const REQUEST_SUBJECT = "Map service request";
 export const REQUEST_QUESTIONS = [
   "Organization and website:",
-  "Package (Setup, Setup and custom world, Care, a promo video, or not sure yet):",
-  "Approximate number of companies:",
-  "Timeline, where the list of companies lives today, and the domain for the map:",
+  "Service, if known:",
+  "Number of companies:",
+  "Company list or data source:",
+  "Map domain:",
+  "Target launch date:",
 ];
 
 /** Where "Request a setup" points: a mailto link with the request filled in, or the form's address. */
