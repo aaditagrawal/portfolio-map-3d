@@ -1,17 +1,17 @@
 /* Shaders for the company globe. All procedural; nothing is fetched.
 
-   - Glass: the translucent globe surface. Each fragment finds the region
+   - Glass: the solid globe surface. Each fragment finds the region
      that owns it with the same additively weighted rule as territoryOf()
      in globeLayout.ts, tints itself in that district's color, and draws a
      thin seam where two territories meet.
    - FatLines: every arc in one instanced draw call per batch. Screen-space
      width, per-vertex RGBA, a per-line emphasis value (for dimming), and an
-     optional dash or traveling pulse. Lines the globe hides fade instead of
-     vanishing, so the far side still reads through the glass.
+     optional dash or traveling pulse. The globe hides far-side connections.
    - SurfaceDots: the little district-colored pins under each logo and the
      hub marker at each region's center, as one Points object. */
 import * as THREE from "three";
 import type { Vec3 } from "./globeLayout";
+import { globePalette, type GlobePalette } from "./palette";
 
 /* 1 when world point P is in front of the globe (radius uRadius at the origin), 0 when hidden by it. */
 const VISIBILITY_GLSL = /* glsl */ `
@@ -35,11 +35,13 @@ export interface GlassRegion {
 }
 
 export function createGlassMaterial(regions: GlassRegion[]): THREE.ShaderMaterial {
+  const palette = globePalette();
   const list = regions.length ? regions : [{ center: [0, 1, 0] as Vec3, radius: 0, color: "#ffffff" }];
   const n = list.length;
   return new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
+    // A solid surface hides far-side artwork instead of showing unreadable ghost labels.
+    transparent: false,
+    depthWrite: true,
     side: THREE.FrontSide,
     defines: { REGIONS: n },
     uniforms: {
@@ -50,6 +52,9 @@ export function createGlassMaterial(regions: GlassRegion[]): THREE.ShaderMateria
       uFocusAmt: { value: 0 },
       uLight: { value: new THREE.Vector3(-0.45, 0.75, 0.5).normalize() },
       uOpacity: { value: 1 },
+      uBase: { value: new THREE.Color(palette.surface) },
+      uRim: { value: new THREE.Color(palette.rim) },
+      uDark: { value: palette.dark ? 1 : 0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vLocal;
@@ -71,6 +76,9 @@ export function createGlassMaterial(regions: GlassRegion[]): THREE.ShaderMateria
       uniform float uFocusAmt;
       uniform vec3 uLight;
       uniform float uOpacity;
+      uniform vec3 uBase;
+      uniform vec3 uRim;
+      uniform float uDark;
       varying vec3 vLocal;
       varying vec3 vN;
       varying vec3 vV;
@@ -91,28 +99,31 @@ export function createGlassMaterial(regions: GlassRegion[]): THREE.ShaderMateria
         // Inside a region's cap reads as "land"; between caps the tint thins out.
         float land = 1.0 - smoothstep(-0.015, 0.07, best);
         float isFocus = (uFocus > -0.5 && abs(bestIdx - uFocus) < 0.5) ? 1.0 : 0.0;
-        float tint = mix(0.2, 0.42, land);
+        float tint = mix(0.045, 0.16, land);
         tint *= mix(1.0, mix(0.6, 1.32, isFocus), uFocusAmt);
         vec3 n = normalize(vN);
         vec3 v = normalize(vV);
         float ndl = dot(n, uLight);
-        vec3 base = mix(vec3(1.0), col, clamp(tint, 0.0, 0.85));
-        vec3 c = base * (0.86 + 0.14 * ndl);
+        vec3 base = mix(uBase, col, clamp(tint, 0.0, 0.32));
+        vec3 c = base * (mix(0.58, 0.28, uDark) + max(ndl, 0.0) * 0.56);
         // Clamped: dot(n, v) of two normalized interpolants can round above 1, and pow() of a
         // negative base is undefined (NaN on GPUs that compute it as exp2(y * log2(x))).
         float fres = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 2.2);
-        c = mix(c, vec3(1.0), seam * 0.78);
-        c = mix(c, vec3(1.0), fres * 0.55);
+        c = mix(c, uRim, seam * 0.38);
+        c = mix(c, uRim, fres * 0.12);
         float spec = pow(max(dot(reflect(-uLight, n), v), 0.0), 24.0);
-        c += spec * 0.12;
-        float a = (0.5 + 0.22 * land + isFocus * uFocusAmt * 0.12) * uOpacity;
-        a = max(a, fres * 0.85);
-        a = min(1.0, a + seam * 0.18);
-        gl_FragColor = vec4(c, a);
+        c += spec * 0.045;
+        gl_FragColor = vec4(c, uOpacity);
         #include <colorspace_fragment>
       }
     `,
   });
+}
+
+export function applyGlassPalette(material: THREE.ShaderMaterial, palette: GlobePalette): void {
+  material.uniforms.uBase.value.set(palette.surface);
+  material.uniforms.uRim.value.set(palette.rim);
+  material.uniforms.uDark.value = palette.dark ? 1 : 0;
 }
 
 /* ------------------------------------------------------------ fat lines */

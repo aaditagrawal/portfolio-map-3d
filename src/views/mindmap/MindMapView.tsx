@@ -258,7 +258,7 @@ function GlobeView({ onContextGiveUp }: { onContextGiveUp: () => void }) {
           className="mm-canvas"
           frameloop={reduced ? "demand" : "always"}
           flat
-          dpr={[1, 2]}
+          dpr={[1, 2.5]}
           gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
           camera={{ fov: FOV, near: 1, far: 4000, position: [0, 40, 260] }}
           // The stage scales a little while the globes switch; never measure the canvas mid-switch on a scroll.

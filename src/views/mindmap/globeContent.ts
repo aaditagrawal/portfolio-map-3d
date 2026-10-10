@@ -84,10 +84,10 @@ export function personGlobeContent(): GlobeContent<PersonNode> {
     badgeAspect: 1,
     badgeFit: PERSON_BADGE_FIT,
     badge: (nd) => personBadge(nd.person),
-    color: () => P.personStem,
-    glow: () => P.teal,
+    color: () => globePalette().personStem,
+    glow: () => globePalette().teal,
     // Eighteen faces never crowd the rim, and faces seen through the glass read as ghosts: fade those more.
-    fade: { back: 0.05, rim: 0.42 },
+    fade: { back: 0, rim: 0.42 },
     flyTo: "overview",
     // One territory larger than the sphere: an even, pale tint all over (no regions, no seams).
     glass: [{ center: [0, 1, 0], radius: 4, color: P.personGlass }],

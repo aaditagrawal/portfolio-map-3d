@@ -14,7 +14,8 @@ import { watchContext } from "../../three/contextWatch";
 import { onBadgeBaked } from "../../three/logoTexture";
 import type { BadgeSprite, GlobeController } from "./controller";
 import type { GlobeNodeBase } from "./globeLayout";
-import { FatLines, SurfaceDots, createGlassMaterial } from "./materials";
+import { FatLines, SurfaceDots, applyGlassPalette, createGlassMaterial } from "./materials";
+import { watchGlobePalette } from "./palette";
 import { atmosphereTexture, coreTexture, glowTexture } from "./sceneTextures";
 
 interface SceneObjects {
@@ -55,19 +56,20 @@ function buildObjects<N extends GlobeNodeBase>(ctl: GlobeController<N>, reduced:
   const R = ctl.R;
   const P = ctl.palette;
 
-  const glass = new THREE.Mesh(new THREE.SphereGeometry(R, 160, 120), createGlassMaterial(ctl.content.glass));
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(R, 128, 96), createGlassMaterial(ctl.content.glass));
   glass.renderOrder = 1;
   glass.raycast = () => {};
 
   const atmoTex = atmosphereTexture();
-  const atmosphere = new THREE.Sprite(new THREE.SpriteMaterial({ map: atmoTex, color: P.atmosphere, transparent: true, depthWrite: false, depthTest: false, opacity: 0.95 }));
+  const atmosphere = new THREE.Sprite(new THREE.SpriteMaterial({ map: atmoTex, color: P.atmosphere, transparent: true, depthWrite: false, depthTest: false, opacity: P.dark ? 0.22 : 0.08 }));
   atmosphere.renderOrder = -1;
   atmosphere.raycast = () => {};
 
   const coreTex = coreTexture({ ink: P.ink, teal: P.teal, paper: P.paper });
-  const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: coreTex, transparent: true, depthWrite: false, opacity: 0.94 }));
+  // The publisher remains a camera-facing hub stamp over the solid planet.
+  const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: coreTex, transparent: true, depthWrite: false, depthTest: false, opacity: 0.94 }));
   core.scale.setScalar(R * 0.62);
-  core.renderOrder = 0.5;
+  core.renderOrder = 2.5;
   core.raycast = () => {};
 
   const glowTex = glowTexture();
@@ -88,10 +90,10 @@ function buildObjects<N extends GlobeNodeBase>(ctl: GlobeController<N>, reduced:
   });
 
   const flow = reduced ? 0 : 1;
-  const spokes = new FatLines({ width: 1.35, backAlpha: 0.12, rimFade: 0.6, radius: R });
-  const cross = new FatLines({ width: 1.2, backAlpha: 0.06, rimFade: 1, radius: R });
-  const documented = new FatLines({ width: 2.6, pulse: 1, flow: 16 * flow, backAlpha: 0.24, radius: R });
-  const fits = new FatLines({ width: 2.3, dash: 2.6, dashRatio: 0.56, flow: 7 * flow, backAlpha: 0.3, radius: R });
+  const spokes = new FatLines({ width: 1.35, backAlpha: 0, rimFade: 0.6, radius: R });
+  const cross = new FatLines({ width: 1.2, backAlpha: 0, rimFade: 1, radius: R });
+  const documented = new FatLines({ width: 2.6, pulse: 1, flow: 16 * flow, backAlpha: 0, radius: R });
+  const fits = new FatLines({ width: 2.3, dash: 2.6, dashRatio: 0.56, flow: 7 * flow, backAlpha: 0, radius: R });
   const dots = new SurfaceDots(R);
   spokes.mesh.renderOrder = 2;
   cross.mesh.renderOrder = 2.1;
@@ -128,6 +130,7 @@ export default function GlobeScene<N extends GlobeNodeBase>({ ctl, reduced, intr
   const scene = useThree((s) => s.scene);
   const size = useThree((s) => s.size);
   const dpr = useThree((s) => s.viewport.dpr);
+  const setDpr = useThree((s) => s.setDpr);
   const invalidate = useThree((s) => s.invalidate);
   const globeRef = useRef<THREE.Group>(null);
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -159,6 +162,30 @@ export default function GlobeScene<N extends GlobeNodeBase>({ ctl, reduced, intr
   }, [ctl, o]);
 
   useEffect(() => () => disposeObjects(o), [o]);
+
+  useEffect(() => watchGlobePalette((palette) => {
+    const repaintCore = palette.ink !== ctl.palette.ink || palette.teal !== ctl.palette.teal || palette.paper !== ctl.palette.paper;
+    Object.assign(ctl.palette, palette);
+    applyGlassPalette(o.glass.material, palette);
+    if (ctl.content.roster === "people") o.glass.material.uniforms.uColor.value[0].set(palette.personGlass);
+    o.atmosphere.material.color.set(palette.atmosphere);
+    o.atmosphere.material.opacity = palette.dark ? 0.22 : 0.08;
+    if (repaintCore) {
+      const previous = o.core.material.map;
+      const texture = coreTexture({ ink: palette.ink, teal: palette.teal, paper: palette.paper });
+      o.core.material.map = texture;
+      o.textures[1] = texture;
+      previous?.dispose();
+    }
+    ctl.buildStaticLines();
+    invalidate();
+  }), [ctl, o, invalidate]);
+
+  useEffect(() => {
+    // Retain native resolution, then spend up to eight million pixels on retina detail.
+    const desired = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5, Math.sqrt(8_000_000 / Math.max(1, size.width * size.height))));
+    if (Math.abs(dpr - desired) > 0.001) setDpr(desired);
+  }, [setDpr, size.width, size.height, dpr]);
 
   // ?debug: show the live scene to the diagnostic probe (does nothing otherwise).
   useEffect(() => registerScene({ view: "mindmap", renderer: gl, scene, camera, badges: o.sprites, controller: ctl }), [gl, scene, camera, o, ctl]);

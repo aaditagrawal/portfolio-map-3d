@@ -566,9 +566,8 @@ export class GlobeController<N extends GlobeNodeBase = GlobeNode> {
   private overviewDist(f: number): number {
     const { h } = this.halfFovs();
     const rho = this.badgeR + this.badgeH * 0.6;
-    // On a portrait phone the width is the limit: let the globe fill it (the outermost logos
-    // may touch the edges) instead of floating small in a tall, empty stage.
-    const fill = this.size.w / Math.max(1, this.size.h) < 0.8 ? 1.04 : 0.86;
+    // Portrait framing leaves room for the badges and atmosphere at both edges.
+    const fill = this.size.w / Math.max(1, this.size.h) < 0.8 ? 0.9 : 0.86;
     return rho / Math.sin(Math.min(this.visibleHalfV(f), h) * fill);
   }
 
@@ -916,8 +915,8 @@ export class GlobeController<N extends GlobeNodeBase = GlobeNode> {
   private updateNodes(cam: THREE.PerspectiveCamera, dt: number): void {
     const C = cam.position;
     const k = this.reduced ? 1 : 1 - Math.exp(-dt * 10);
-    const backOp = this.content.fade?.back ?? 0.12;
-    const rimOp = this.content.fade?.rim ?? 0.22;
+    const backOp = this.content.fade?.back ?? 0;
+    const rimOp = this.content.fade?.rim ?? 0;
     for (let i = 0; i < this.sprites.length; i++) {
       const s = this.sprites[i];
       const P = tmpV.copy(this.nodeLocal[i]).multiplyScalar(this.badgeR).applyQuaternion(this.q);
@@ -927,15 +926,15 @@ export class GlobeController<N extends GlobeNodeBase = GlobeNode> {
       const facing = (P.x * toCam.x + P.y * toCam.y + P.z * toCam.z) / len;
       this.vis[i] = vis;
       this.facing[i] = facing;
-      // Fade toward the rim, where badges crowd in perspective; the far side only shows through the glass.
+      // Fade toward the rim, where badges crowd in perspective; far-side badges stay hidden.
       // Dimmed (de-emphasized) badges fade toward paper but stay mostly solid, and every logo stays
       // recognizable: a selection or search steps the others back, it never blanks them (dimming.ts).
       const dim = badgeDim(this.emphCur[i]);
-      const front = rimOp + (1 - rimOp) * smoothstep(0.04, 0.42, facing);
+      const front = rimOp + (1 - rimOp) * smoothstep(0.08, 0.3, facing);
       const op = (vis * front + (1 - vis) * backOp) * dim.opacity;
       s.material.opacity = op;
       (s.material.userData.fade as { value: number }).value = dim.fade;
-      s.visible = op > 0.01;
+      s.visible = op > 0.12;
       const active = i === this.selected ? 1.3 : i === this.hovered || i === this.kbdFocus ? 1.16 : 1;
       this.scaleCur[i] += (active - this.scaleCur[i]) * k;
       const sc = this.scaleCur[i];
@@ -947,8 +946,8 @@ export class GlobeController<N extends GlobeNodeBase = GlobeNode> {
       if (i >= 0) {
         const pulse = this.reduced ? 1 : 1 + 0.06 * Math.sin(this.time * 2.6);
         this.selGlow.position.copy(this.nodeLocal[i]).multiplyScalar(this.badgeR - 0.05);
-        this.selGlow.scale.setScalar(this.badgeW * 2.1 * pulse);
-        this.selGlow.material.opacity = 0.2 + 0.6 * this.vis[i];
+        this.selGlow.scale.setScalar(this.badgeW * 1.7 * pulse);
+        this.selGlow.material.opacity = 0.1 + 0.25 * this.vis[i];
         if (this.glowFor !== i) {
           this.selGlow.material.color.set(this.content.glow?.(this.layout.nodes[i]) ?? this.content.color(this.layout.nodes[i]));
           this.glowFor = i;
@@ -980,7 +979,7 @@ export class GlobeController<N extends GlobeNodeBase = GlobeNode> {
       // The core is a quiet anchor: it steps back when something is selected or the camera is close.
       const D = cam.position.length();
       const near = smoothstep(this.homeDist * 0.55, this.homeDist * 0.95, D);
-      this.core.material.opacity = 0.92 * (0.3 + 0.7 * near) * (1 - 0.55 * this.selAmt);
+      this.core.material.opacity = 0.8 * (0.3 + 0.7 * near) * (1 - 0.55 * this.selAmt);
     }
     if (this.atmosphere) {
       const D = cam.position.length();

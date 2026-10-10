@@ -4,8 +4,8 @@
 .mm-view {
   overflow: hidden;
   background:
-    radial-gradient(ellipse 62% 58% at 50% 48%, var(--mindmap-bg-top) 0%, transparent 72%),
-    linear-gradient(180deg, var(--mindmap-bg-top), var(--mindmap-bg-bottom));
+    radial-gradient(ellipse 62% 58% at 50% 48%, var(--surface-alt) 0%, transparent 72%),
+    linear-gradient(180deg, var(--bg), var(--surface-sunken));
   touch-action: none;
 }
 .mm-canvas { position: absolute !important; inset: 0; }
@@ -24,8 +24,8 @@
   display: inline-flex; align-items: center; gap: 6px;
   height: 28px; padding: 0 10px 0 4px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--glass-border);
-  background: var(--glass-bg);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   color: var(--text); font-size: 12.5px; font-weight: 650; line-height: 1; white-space: nowrap;
   box-shadow: var(--shadow-2);

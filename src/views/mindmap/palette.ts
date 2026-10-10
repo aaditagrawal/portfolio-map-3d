@@ -1,9 +1,12 @@
-/* Scene colors for the globe, read once from the CSS tokens in
+/* Scene colors for the globe, read from the current CSS tokens in
    src/styles/tokens.css so the 3D scene and the HUD legend share one
    source. District colors never come from here: they come from data
    (district.color). The fallbacks only apply if a token is missing. */
 
 export interface GlobePalette {
+  dark: boolean;
+  surface: string;
+  rim: string;
   /** Documented connections (sourced facts). */
   documented: string;
   /** Potential providers of the selected company (derived suggestions). */
@@ -25,6 +28,9 @@ export interface GlobePalette {
 }
 
 const FALLBACK: GlobePalette = {
+  dark: false,
+  surface: "#e4e4e7",
+  rim: "#a1a1aa",
   documented: "#0c7a8c",
   provider: "#eda100",
   client: "#2a78d6",
@@ -32,29 +38,51 @@ const FALLBACK: GlobePalette = {
   teal: "#0c7a8c",
   ink: "#1d1f24",
   paper: "#ffffff",
-  atmosphere: "#9fd3ea",
-  personGlass: "#c3dbe2",
-  personStem: "#8a98a6",
+  atmosphere: "#a1a1aa",
+  personGlass: "#a1a1aa",
+  personStem: "#71717a",
 };
 
-let cached: GlobePalette | null = null;
-
 export function globePalette(): GlobePalette {
-  if (cached) return cached;
   if (typeof document === "undefined") return FALLBACK;
   const cs = getComputedStyle(document.documentElement);
+  const dark = cs.colorScheme.includes("dark");
   const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
-  cached = {
+  return {
+    dark,
+    surface: dark ? "#18181b" : "#e4e4e7",
+    rim: dark ? "#52525b" : "#a1a1aa",
     documented: v("--mindmap-documented", v("--brand-accent", FALLBACK.documented)),
     provider: v("--mindmap-provider", FALLBACK.provider),
     client: v("--mindmap-client", FALLBACK.client),
     line: v("--mindmap-line", FALLBACK.line),
     teal: v("--brand-accent", FALLBACK.teal),
     ink: v("--brand-ink", FALLBACK.ink),
-    paper: v("--mindmap-bg-top", FALLBACK.paper),
-    atmosphere: v("--mindmap-atmosphere", v("--scene-sky-top", FALLBACK.atmosphere)),
-    personGlass: v("--mindmap-person-glass", FALLBACK.personGlass),
-    personStem: v("--mindmap-person-stem", FALLBACK.personStem),
+    // Publisher artwork and badge dimming use a light plate in either interface theme.
+    paper: "#ffffff",
+    atmosphere: dark ? "#71717a" : "#a1a1aa",
+    personGlass: dark ? "#3f3f46" : "#a1a1aa",
+    personStem: v("--text-muted", FALLBACK.personStem),
   };
-  return cached;
+}
+
+/** Theme toggles and OS changes repaint an already-mounted scene. */
+export function watchGlobePalette(change: (palette: GlobePalette) => void): () => void {
+  let last = "";
+  const refresh = () => {
+    const palette = globePalette();
+    const key = JSON.stringify(palette);
+    if (key === last) return;
+    last = key;
+    change(palette);
+  };
+  const observer = new MutationObserver(refresh);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style", "class"] });
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", refresh);
+  refresh();
+  return () => {
+    observer.disconnect();
+    media.removeEventListener("change", refresh);
+  };
 }
