@@ -3,9 +3,12 @@
    and each company also links straight into its map. */
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { instanceHref } from "../../../federation/protocol.ts";
-import { plural, shortCountLine } from "../lib/copy.ts";
+import { plural } from "../lib/copy.ts";
 import { searchNetwork, type SearchIndex } from "../lib/search.ts";
 import { Close, External, SearchIcon } from "./Icons.tsx";
+import { DistrictIcon, districtLabel } from "./DistrictIcon.tsx";
+import { WorldIdentity } from "./WorldIdentity.tsx";
+import "../styles/directory.css";
 
 interface Props {
   index: SearchIndex;
@@ -77,7 +80,7 @@ export function NetworkSearch({ index, onWorld, onCompany, inputRef }: Props) {
   };
 
   return (
-    <div className="search" ref={box} role="search">
+    <div className="search network-search" ref={box} role="search">
       <label className="sr-only" htmlFor={`${id}-q`}>
         Search companies and maps across the network
       </label>
@@ -117,17 +120,14 @@ export function NetworkSearch({ index, onWorld, onCompany, inputRef }: Props) {
         {open ? summary : ""}
       </p>
       <div id={`${id}-results`} className="search-results" ref={list} hidden={!showing} onKeyDown={onListKey}>
-        {showing && !result.groups.length ? <p className="search-empty">No company or map matches “{query.trim()}”.</p> : null}
+        {showing && !result.groups.length ? <p className="search-empty">No matches for &quot;{query.trim()}&quot;.</p> : null}
         {showing && result.groups.length ? <p className="search-summary">{summary}</p> : null}
         {showing
           ? result.groups.map((g) => {
-              const m = g.world.manifest;
               return (
                 <section key={g.world.id} className="sr-group" aria-label={g.world.name}>
                   <button type="button" className="sr-world" onClick={choose(() => onWorld(g.world.id))}>
-                    <span className="dot dot-lg" style={{ background: g.world.accent }} aria-hidden="true" />
-                    <span className="sr-world-name">{g.world.name}</span>
-                    <span className="sr-world-meta">{g.total ? `${g.total} ${plural(g.total, m.labels.company, m.labels.companies)}` : shortCountLine(m)}</span>
+                    <WorldIdentity name={g.world.name} accent={g.world.accent} logo={g.world.logo} />
                   </button>
                   {g.companies.length ? (
                     <ul className="sr-companies">
@@ -136,12 +136,12 @@ export function NetworkSearch({ index, onWorld, onCompany, inputRef }: Props) {
                           <button type="button" className="sr-company-main" onClick={choose(() => onCompany(g.world.id, c.company.slug))}>
                             <span className="sr-company-name">{c.company.name}</span>
                             {c.district ? (
-                              <span className="chip-mini">
-                                <span className="dot" style={{ background: c.district.color }} aria-hidden="true" />
-                                {c.district.label}
+                              <span className="sr-category" title={c.district.label}>
+                                <DistrictIcon label={c.district.label} size={16} />
+                                <span aria-hidden="true">{districtLabel(c.district.label)}</span>
+                                <span className="sr-only">{c.district.label}</span>
                               </span>
                             ) : null}
-                            {c.company.description ? <span className="sr-desc">{c.company.description}</span> : null}
                           </button>
                           <a className="sr-open" href={instanceHref(g.world.url, c.company.slug)} aria-label={`Open ${c.company.name} in ${g.world.name}`} title={`Open in ${g.world.name}`}>
                             <External size={16} />

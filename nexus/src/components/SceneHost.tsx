@@ -16,5 +16,5 @@ export function SceneHost({ engine, className, label, interactive }: { engine: N
       engine.detach(host);
     };
   }, [engine]);
-  return <div ref={ref} className={`${className}${interactive ? " is-interactive" : ""}`} role="img" aria-label={label} />;
+  return <div ref={ref} className={`${className}${interactive ? " is-interactive" : ""}`} role="group" aria-label={label} />;
 }

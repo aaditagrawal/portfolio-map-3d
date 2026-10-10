@@ -6,7 +6,11 @@ import { initials } from "../lib/copy.ts";
 
 export function LogoBadge({ name, accent, logo, size = 40 }: { name: string; accent: string; logo: string | null; size?: number }) {
   const [failed, setFailed] = useState(false);
-  const style = { width: size, height: size, fontSize: Math.round(size * 0.38) };
+  const style = {
+    width: `calc(${size} * var(--badge-unit, 1px))`,
+    height: `calc(${size} * var(--badge-unit, 1px))`,
+    fontSize: `calc(${Math.round(size * 0.38)} * var(--badge-unit, 1px))`,
+  };
   if (logo && !failed) {
     return (
       <span className="badge badge-logo" style={style} aria-hidden="true">

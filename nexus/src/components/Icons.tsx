@@ -1,102 +1,17 @@
-/* Inline icons (no icon font or network request). Decorative: the text beside each one names
-   the action, or the button carries an aria-label. */
-import { useId, type ReactNode, type SVGProps } from "react";
+/* Lucide for interface controls; original artwork for the Nexus and GitHub marks. */
+import { useId } from "react";
 import { MARK, closedPath, ringFront } from "../lib/mark.ts";
-
-function Icon({ children, size = 20, ...rest }: SVGProps<SVGSVGElement> & { size?: number; children: ReactNode }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" {...rest}>
-      {children}
-    </svg>
-  );
-}
-
+export { ArrowRight, ArrowLeft, ArrowUpRight as External, Search as SearchIcon, X as Close, Copy as CopyIcon, Check, ChevronDown, List as ListIcon, Orbit, Globe2 as Globe, MapPin as Walk, ListFilter as Directory, Music2 as MusicNote } from "lucide-react";
 type P = { size?: number; className?: string };
 
-export const ArrowRight = (p: P) => (
-  <Icon {...p}>
-    <path d="M5 12h14M13 6l6 6-6 6" />
-  </Icon>
-);
-export const ArrowLeft = (p: P) => (
-  <Icon {...p}>
-    <path d="M19 12H5M11 6l-6 6 6 6" />
-  </Icon>
-);
-export const External = (p: P) => (
-  <Icon {...p}>
-    <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-  </Icon>
-);
-export const SearchIcon = (p: P) => (
-  <Icon {...p}>
-    <circle cx="11" cy="11" r="6.5" />
-    <path d="m16 16 4.5 4.5" />
-  </Icon>
-);
-export const Close = (p: P) => (
-  <Icon {...p}>
-    <path d="M6 6l12 12M18 6 6 18" />
-  </Icon>
-);
-export const CopyIcon = (p: P) => (
-  <Icon {...p}>
-    <rect x="9" y="9" width="11" height="11" rx="2" />
-    <path d="M5 15V5a1 1 0 0 1 1-1h10" />
-  </Icon>
-);
-export const Check = (p: P) => (
-  <Icon {...p}>
-    <path d="m5 12.5 4.5 4.5L19 7.5" />
-  </Icon>
-);
-export const ListIcon = (p: P) => (
-  <Icon {...p}>
-    <path d="M9 6h11M9 12h11M9 18h11" />
-    <circle cx="4.5" cy="6" r="1" />
-    <circle cx="4.5" cy="12" r="1" />
-    <circle cx="4.5" cy="18" r="1" />
-  </Icon>
-);
-export const Orbit = (p: P) => (
-  <Icon {...p}>
-    <circle cx="12" cy="12" r="2.6" />
-    <ellipse cx="12" cy="12" rx="9.5" ry="4.2" transform="rotate(-25 12 12)" />
-  </Icon>
-);
-export const Globe = (p: P) => (
-  <Icon {...p}>
-    <circle cx="12" cy="12" r="8.5" />
-    <path d="M3.5 12h17M12 3.5c2.6 2.6 3.8 5.4 3.8 8.5s-1.2 5.9-3.8 8.5c-2.6-2.6-3.8-5.4-3.8-8.5s1.2-5.9 3.8-8.5Z" />
-  </Icon>
-);
-export const Walk = (p: P) => (
-  <Icon {...p}>
-    <path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21Z" />
-    <circle cx="12" cy="10.5" r="2.2" />
-  </Icon>
-);
-export const Directory = (p: P) => (
-  <Icon {...p}>
-    <rect x="4" y="4" width="16" height="16" rx="2.5" />
-    <path d="M8 9h8M8 12.5h8M8 16h5" />
-  </Icon>
-);
-export const MusicNote = (p: P) => (
-  <Icon {...p}>
-    <path d="M9 17.5V6l10-2v11.5" />
-    <circle cx="6.5" cy="17.5" r="2.5" />
-    <circle cx="16.5" cy="15.5" r="2.5" />
-  </Icon>
-);
-/** Bars that move while the music plays (base.css; still when the visitor prefers reduced motion). */
-export const SoundBars = ({ className, ...p }: P) => (
-  <Icon {...p} className={className ? `sound-bars ${className}` : "sound-bars"}>
+/** Animated bars retain the music control's reduced-motion behavior. */
+export const SoundBars = ({ size = 20, className }: P) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true" focusable="false" className={className ? `sound-bars ${className}` : "sound-bars"}>
     <line x1="5" y1="9.5" x2="5" y2="14.5" />
     <line x1="9.67" y1="5.5" x2="9.67" y2="18.5" />
     <line x1="14.33" y1="8" x2="14.33" y2="16" />
     <line x1="19" y1="10" x2="19" y2="14" />
-  </Icon>
+  </svg>
 );
 
 /** GitHub's mark (GitHub's Octicons, MIT License), for the link to the repository. */

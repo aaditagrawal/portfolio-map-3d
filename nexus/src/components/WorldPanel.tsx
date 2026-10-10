@@ -2,11 +2,14 @@
    of its companies, each linking into the map. A side panel on wide screens, a bottom sheet on
    phones. The parent gives it key={world id}, so its filters start fresh for each world. */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { instanceHref } from "../../../federation/protocol.ts";
-import { capitalize, countLine, formatDate, hostOf, peopleLine, proofLine, publisherLine } from "../lib/copy.ts";
+import { instanceHref, type ManifestCompany, type ManifestDistrict } from "../../../federation/protocol.ts";
+import { capitalize, formatDate, hostOf } from "../lib/copy.ts";
 import { filterCompanies, type IndexedWorld } from "../lib/search.ts";
-import { ArrowRight, Check, Close, External } from "./Icons.tsx";
-import { LogoBadge } from "./LogoBadge.tsx";
+import { ArrowRight, ChevronDown, Close, External } from "./Icons.tsx";
+import { WorldIdentity } from "./WorldIdentity.tsx";
+import { MapCounts } from "./CountBoard.tsx";
+import { DistrictIcon, districtLabel } from "./DistrictIcon.tsx";
+import "../styles/directory.css";
 
 const PAGE = 60;
 
@@ -14,23 +17,27 @@ interface Props {
   iw: IndexedWorld;
   highlight: string | null;
   initialFilter: string;
+  initialDistrict?: string;
+  onDistrictChange?: (slug: string | null) => void;
+  enterHref?: string;
   onClose: () => void;
 }
 
-export function WorldPanel({ iw, highlight, initialFilter, onClose }: Props) {
+export function WorldPanel({ iw, highlight, initialFilter, initialDistrict, onDistrictChange, enterHref, onClose }: Props) {
   const w = iw.world;
   const m = w.manifest;
   const [filter, setFilter] = useState(initialFilter);
-  const [district, setDistrict] = useState<string | null>(null);
+  const [district, setDistrict] = useState<string | null>(() =>
+    initialDistrict && m.districts.some((d) => d.slug === initialDistrict) ? initialDistrict : null,
+  );
   const list = useMemo(() => filterCompanies(iw, filter, district), [iw, filter, district]);
   const hlIndex = highlight ? list.findIndex((c) => c.company.slug === highlight) : -1;
   const [limit, setLimit] = useState(() => Math.max(PAGE, hlIndex + 20));
   const title = useRef<HTMLHeadingElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const people = peopleLine(m);
-  const publisher = publisherLine(m);
-  const proof = w.status === "verified" ? proofLine(w.proof, w.publisher.website) : null;
+  const picker = useRef<HTMLDetailsElement>(null);
   const districts = useMemo(() => new Map(m.districts.map((d) => [d.slug, d])), [m]);
+  const selectedDistrict = district ? districts.get(district) : undefined;
 
   useEffect(() => {
     title.current?.focus({ preventScroll: true });
@@ -45,12 +52,11 @@ export function WorldPanel({ iw, highlight, initialFilter, onClose }: Props) {
   }, [highlight]);
 
   return (
-    <aside className={`panel${w.status === "unreachable" ? " is-dim" : ""}`} aria-labelledby="panel-title">
+    <aside className={`panel directory-panel${w.status === "unreachable" ? " is-dim" : ""}`} aria-labelledby="panel-title">
       <div className="panel-head">
-        <LogoBadge name={w.name} accent={w.accent} logo={w.logo} size={48} />
         <div className="panel-title">
           <h2 id="panel-title" ref={title} tabIndex={-1}>
-            {w.name}
+            <WorldIdentity name={w.name} accent={w.accent} logo={w.logo} />
           </h2>
           <p className="panel-host">{hostOf(w.url)}</p>
         </div>
@@ -60,37 +66,15 @@ export function WorldPanel({ iw, highlight, initialFilter, onClose }: Props) {
       </div>
       <div className="panel-body" ref={body}>
         {w.status === "unreachable" ? (
-          <p className="status status-unreachable">Not reachable at last check. Shown from its manifest of {formatDate(m.updated)}.</p>
+          <p className="status status-unreachable">Map unavailable. Data from {formatDate(m.updated)}.</p>
         ) : null}
-        {w.tagline ? <p className="panel-tagline">{w.tagline}</p> : null}
-        {publisher || proof ? (
-          <div className="panel-meta">
-            {publisher ? <p className="publisher">{publisher}</p> : null}
-            {proof ? (
-              <p className="proof">
-                <Check size={15} />
-                {proof}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <p className="panel-counts">
-          {countLine(m)}
-          {people ? ` · ${people}` : ""}
-        </p>
-        <a className="btn btn-primary btn-block" href={instanceHref(w.url)}>
-          Enter {w.name} <ArrowRight size={18} />
+        <MapCounts manifest={m} />
+        <a className="btn btn-primary btn-block panel-enter" href={enterHref ?? instanceHref(w.url)}>
+          Enter planet <ArrowRight size={18} aria-hidden="true" />
         </a>
-
-        <h3 className="panel-h">{capitalize(m.labels.districts)}</h3>
-        <div className="chips" role="group" aria-label={`Show one ${m.labels.district}'s ${m.labels.companies}`}>
-          {m.districts.map((d) => (
-            <button key={d.slug} type="button" className="chip chip-btn" aria-pressed={district === d.slug} onClick={() => setDistrict(district === d.slug ? null : d.slug)}>
-              <span className="dot" style={{ background: d.color }} aria-hidden="true" />
-              {d.label}
-              <span className="chip-n">{d.count}</span>
-            </button>
-          ))}
+        <div className="net-actions">
+          <a className="text-link" href={instanceHref(w.url)}>Visit map <External size={16} /></a>
+          {w.publisher.website ? <a className="text-link" href={w.publisher.website}>Visit link <External size={16} /></a> : null}
         </div>
 
         <div className="panel-list-head">
@@ -117,25 +101,54 @@ export function WorldPanel({ iw, highlight, initialFilter, onClose }: Props) {
             }
           }}
         />
+        <div className="district-picker-row">
+          <details className="district-picker" ref={picker}>
+            <summary className="district-picker-summary">
+              <DistrictIcon label={selectedDistrict?.label ?? m.labels.districts} />
+              <span>{selectedDistrict ? districtLabel(selectedDistrict.label) : `All ${m.labels.districts}`}</span>
+              <ChevronDown size={16} className="district-picker-chevron" aria-hidden="true" />
+            </summary>
+            <div className="district-filter-grid" role="group" aria-label={`Filter by ${m.labels.district}`}>
+              {m.districts.map((d) => (
+                <button
+                  key={d.slug}
+                  type="button"
+                  className="district-filter"
+                  aria-label={`${d.label}, ${d.count} ${m.labels.companies}`}
+                  title={d.label}
+                  aria-pressed={district === d.slug}
+                  onClick={() => {
+                    const nextDistrict = district === d.slug ? null : d.slug;
+                    setDistrict(nextDistrict);
+                    onDistrictChange?.(nextDistrict);
+                    if (picker.current) {
+                      picker.current.open = false;
+                      picker.current.querySelector("summary")?.focus();
+                    }
+                  }}
+                >
+                  <DistrictIcon label={d.label} />
+                  <span className="district-filter-label">{districtLabel(d.label)}</span>
+                  <span className="district-filter-count">{d.count}</span>
+                </button>
+              ))}
+            </div>
+          </details>
+          {district ? (
+            <button type="button" className="icon-btn district-clear" onClick={() => {
+              setDistrict(null);
+              onDistrictChange?.(null);
+            }} aria-label={`Show all ${m.labels.companies}`}>
+              <Close size={16} />
+            </button>
+          ) : null}
+        </div>
         {list.length ? (
           <ul className="co-list">
             {list.slice(0, limit).map(({ company: c }) => {
               const d = districts.get(c.district);
               return (
-                <li key={c.slug} data-slug={c.slug} className={`co${c.slug === highlight ? " is-hl" : ""}`}>
-                  <a className="co-link" href={instanceHref(w.url, c.slug)}>
-                    <span className="co-name">{c.name}</span>
-                    <span className="sr-only">, in {w.name}</span>
-                    <External size={15} className="co-ext" />
-                  </a>
-                  {d ? (
-                    <span className="chip-mini">
-                      <span className="dot" style={{ background: d.color }} aria-hidden="true" />
-                      {d.label}
-                    </span>
-                  ) : null}
-                  {c.description ? <p className="co-desc">{c.description}</p> : null}
-                </li>
+                <CompanyRow key={c.slug} company={c} district={d} worldUrl={w.url} worldName={w.name} highlighted={c.slug === highlight} />
               );
             })}
           </ul>
@@ -148,10 +161,52 @@ export function WorldPanel({ iw, highlight, initialFilter, onClose }: Props) {
           </button>
         ) : null}
         <p className="panel-foot">
-          Manifest updated {formatDate(m.updated)}
+          Updated {formatDate(m.updated)}
           {w.checked ? ` · checked ${formatDate(w.checked)}` : ""}
         </p>
       </div>
     </aside>
+  );
+}
+
+function CompanyRow({ company, district, worldUrl, worldName, highlighted }: {
+  company: ManifestCompany;
+  district: ManifestDistrict | undefined;
+  worldUrl: string;
+  worldName: string;
+  highlighted: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const descriptionId = `company-description-${company.slug}`;
+  return (
+    <li data-slug={company.slug} className={`co${highlighted ? " is-hl" : ""}`}>
+      <div className="co-header">
+        <a className="co-link" href={instanceHref(worldUrl, company.slug)}>
+          <span className="co-name">{company.name}</span>
+          <span className="sr-only">, in {worldName}</span>
+          <External size={16} className="co-ext" aria-hidden="true" />
+        </a>
+        {company.description ? (
+          <button
+            type="button"
+            className="icon-btn co-description-toggle"
+            aria-label={`${expanded ? "Hide" : "Show"} description for ${company.name}`}
+            aria-expanded={expanded}
+            aria-controls={descriptionId}
+            onClick={() => setExpanded(!expanded)}
+          >
+            <ChevronDown size={18} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+      {district ? (
+        <span className="co-category" title={district.label}>
+          <DistrictIcon label={district.label} size={16} />
+          <span aria-hidden="true">{districtLabel(district.label)}</span>
+          <span className="sr-only">{district.label}</span>
+        </span>
+      ) : null}
+      {company.description ? <p id={descriptionId} className="co-description" hidden={!expanded}>{company.description}</p> : null}
+    </li>
   );
 }

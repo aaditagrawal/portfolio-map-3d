@@ -2,6 +2,26 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, CopyIcon } from "./Icons.tsx";
 
+function shellTokens(code: string) {
+  const tokens = code.match(/\s+|&&|\|\||[|;]|"(?:\\.|[^"\\])*"|'[^']*'|[^\s|;]+/g) ?? [];
+  let command = true;
+  return tokens.map((text, index) => {
+    if (/^\s+$/.test(text)) {
+      if (text.includes("\n")) command = true;
+      return text;
+    }
+    let kind: string;
+    if (/^(?:&&|\|\||[|;])$/.test(text)) {
+      kind = "operator";
+      command = true;
+    } else {
+      kind = command ? "command" : /^['"]/.test(text) ? "string" : /^-/.test(text) ? "flag" : text.includes("/") || text === "my-map" ? "path" : "argument";
+      command = false;
+    }
+    return <span className={`shell-${kind}`} key={index}>{text}</span>;
+  });
+}
+
 export function CodeBlock({ code, label, lang = "shell" }: { code: string; label: string; lang?: "shell" | "json" }) {
   const [copied, setCopied] = useState<"yes" | "no" | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -31,7 +51,7 @@ export function CodeBlock({ code, label, lang = "shell" }: { code: string; label
   return (
     <div className={`code code-${lang}`}>
       <pre ref={pre} tabIndex={0} aria-label={label}>
-        <code>{code}</code>
+        <code>{lang === "shell" ? shellTokens(code) : code}</code>
       </pre>
       <button type="button" className="code-copy" onClick={copy}>
         {copied === "yes" ? <Check size={16} /> : <CopyIcon size={16} />}

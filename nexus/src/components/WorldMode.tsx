@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { instanceHref } from "../../../federation/protocol.ts";
 import { HUD, hudInsets, isPhone, panelWidth } from "../lib/hud.ts";
+import { planetEntryHref } from "../lib/entry.ts";
 import type { World } from "../lib/network.ts";
 import { LANDING, namesArrival, sameRoute, type Route } from "../lib/route.ts";
 import { buildIndex } from "../lib/search.ts";
@@ -27,7 +28,7 @@ interface Props {
   engine: NexusEngine | null;
   gl: EngineStatus;
   reduced: boolean;
-  pickRef: RefObject<((id: string | null) => void) | null>;
+  pickRef: RefObject<((id: string | null, district?: string) => void) | null>;
   onRetry: () => void;
 }
 
@@ -46,7 +47,7 @@ function Toast({ arrival, onClose }: { arrival: Arrival; onClose: () => void }) 
     return (
       <div className="toast toast-neutral">
         <div className="toast-row">
-          <p>The map you came from hasn't joined the network yet. Maps appear here once they are verified and reviewed.</p>
+          <p>This map hasn't joined the network yet.</p>
           {dismiss}
         </div>
       </div>
@@ -56,7 +57,7 @@ function Toast({ arrival, onClose }: { arrival: Arrival; onClose: () => void }) 
   return (
     <div className="toast">
       <p>
-        You came from <strong>{world.name}</strong>. Every map in the network is a world here.
+        You came from <strong>{world.name}</strong>.
       </p>
       <div className="toast-actions">
         <a className="text-link" href={instanceHref(world.url)}>
@@ -78,6 +79,7 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
   const [sheetOpen, setSheetOpen] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [panelFilter, setPanelFilter] = useState("");
+  const [panelDistrict, setPanelDistrict] = useState<string | undefined>();
   const [panelNonce, setPanelNonce] = useState(0);
   const [toast, setToast] = useState<Arrival | null>(null);
   const [portal, setPortal] = useState(false);
@@ -95,7 +97,7 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
   const worldCount = model?.worlds.length ?? 0;
 
   useEffect(() => {
-    document.title = iw ? `${iw.world.name} · The Nexus` : "The Nexus · every map in the network";
+    document.title = iw ? `${iw.world.name} · The Nexus` : "The Nexus · company maps";
   }, [iw]);
 
   useEffect(() => {
@@ -107,11 +109,12 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
   const go = useCallback((world: string | null) => navigate({ mode: "world", world, from: null, via: null, sample: route.sample }, { replace: true }), [route.sample]);
 
   const openWorld = useCallback(
-    (id: string, opts: { highlight?: string; filter?: string } = {}) => {
+    (id: string, opts: { highlight?: string; filter?: string; district?: string } = {}) => {
       const active = document.activeElement;
       if (active instanceof HTMLElement && active !== document.body && !active.closest(".panel")) returnFocus.current = active;
       setHighlight(opts.highlight ?? null);
       setPanelFilter(opts.filter ?? "");
+      setPanelDistrict(opts.district);
       setPanelNonce((n) => n + 1);
       setSheetOpen(false);
       go(id);
@@ -138,9 +141,9 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
 
   // The 3D scene reports what was clicked: a world opens, the core returns to the overview.
   useEffect(() => {
-    pickRef.current = (id) => {
+    pickRef.current = (id, district) => {
       if (id === "core") overview();
-      else if (id) openWorld(id);
+      else if (id) openWorld(id, { district });
     };
     return () => {
       pickRef.current = null;
@@ -194,6 +197,10 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, model, selected]);
 
+  useEffect(() => {
+    if (selected) engine?.setDistrict(panelDistrict ?? null);
+  }, [engine, selected, panelDistrict, panelNonce]);
+
   // Esc closes what is open; "/" goes to search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -220,20 +227,20 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
     return (
       <div className="world-fallback">
         <header className="fallback-head">
-          <div className="hud-brand">
+          <a className="hud-brand" href={routeHref({ ...LANDING, sample: route.sample })} onClick={(event) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); leave(); } }} aria-label="The Nexus, home">
             <Mark size={28} className="brand-mark" />
             <span className="hud-brand-name">Nexus</span>
             {route.sample ? <span className="sample-badge">Sample data</span> : null}
-          </div>
+          </a>
           <button type="button" className="btn btn-outline btn-small" onClick={leave}>
-            <ArrowLeft size={16} /> About the network
+            <ArrowLeft size={16} /> Home
           </button>
         </header>
         <main className="container fallback-main">
           {toastRegion}
           <h1>The network</h1>
-          <p className="note">This browser could not start the 3D world, so the network is shown as a list. Every map is reachable from here.</p>
-          {net.status === "loading" ? <p className="muted">Loading the network…</p> : null}
+          <p className="note">3D is unavailable. Browse the maps below.</p>
+          {net.status === "loading" ? <p className="muted">Loading maps...</p> : null}
           {net.status === "error" ? <p className="status status-problem">{net.message}</p> : null}
           {model ? <NetworkList model={model} headingLevel={2} joinHref={routeHref({ ...LANDING, sample: route.sample }, "#how")} /> : null}
         </main>
@@ -257,7 +264,7 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
   return (
     <div className={`world${phone ? " is-phone" : ""}${listShown ? " has-list" : ""}${iw ? " has-panel" : ""}`} style={style}>
       <a className="skip-link" href="#world-list" onClick={() => (phone ? setSheetOpen(true) : setRailOpen(true))}>
-        Skip to the list of worlds
+        Skip to maps
       </a>
       <main className="world-main" aria-label="The Nexus">
         <SceneHost
@@ -272,7 +279,7 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
             <span className="portal-ring portal-ring-2" />
           </div>
         ) : null}
-        {net.status === "loading" ? <p className="world-note">Loading the network…</p> : null}
+        {net.status === "loading" ? <p className="world-note">Loading maps...</p> : null}
         {net.status === "error" ? (
           <div className="world-card">
             <p className="status status-problem">{net.message}</p>
@@ -292,16 +299,16 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
       </main>
 
       <header className="hud-top">
-        <div className="hud-brand">
+        <a className="hud-brand" href={routeHref({ ...LANDING, sample: route.sample })} onClick={(event) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); leave(); } }} aria-label="The Nexus, home">
           <Mark size={28} className="brand-mark" />
           <span className="hud-brand-name">Nexus</span>
           {route.sample ? <span className="sample-badge">Sample data</span> : null}
-        </div>
+        </a>
         <NetworkSearch index={index} onWorld={(id, filter) => openWorld(id, { filter })} onCompany={(id, slug) => openWorld(id, { highlight: slug })} inputRef={searchInput} />
         <div className="hud-actions">
           <button type="button" className="hud-btn" aria-expanded={listShown} aria-controls="world-list" onClick={() => (phone ? setSheetOpen(!sheetOpen) : setRailOpen(!railOpen))}>
             <ListIcon size={20} />
-            <span className="hud-btn-text">Worlds</span>
+            <span className="hud-btn-text">Maps</span>
             <span className="hud-count">{worldCount}</span>
           </button>
           <button type="button" className="hud-btn" onClick={overview}>
@@ -310,7 +317,7 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
           </button>
           <button type="button" className="hud-btn" onClick={leave}>
             <ArrowLeft size={20} />
-            <span className="hud-btn-text">About the network</span>
+            <span className="hud-btn-text">Home</span>
           </button>
         </div>
       </header>
@@ -318,7 +325,7 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
       <nav id="world-list" className="rail" aria-labelledby="world-list-title" hidden={!listShown}>
         <div className="rail-head">
           <h2 id="world-list-title">
-            Worlds <span className="hud-count">{worldCount}</span>
+            Maps <span className="hud-count">{worldCount}</span>
           </h2>
           <button type="button" className="icon-btn icon-btn-small" onClick={() => (phone ? setSheetOpen(false) : setRailOpen(false))} aria-label="Hide the list of worlds">
             <Close size={18} />
@@ -327,7 +334,7 @@ export function WorldMode({ route, net, engine, gl, reduced, pickRef, onRetry }:
         {model ? <WorldList model={model} current={selected} onSelect={(id) => openWorld(id)} /> : null}
       </nav>
 
-      {iw ? <WorldPanel key={`${iw.world.id}:${panelNonce}`} iw={iw} highlight={highlight} initialFilter={panelFilter} onClose={closePanel} /> : null}
+      {iw ? <WorldPanel key={`${iw.world.id}:${panelNonce}`} iw={iw} highlight={highlight} initialFilter={panelFilter} initialDistrict={panelDistrict} enterHref={planetEntryHref(iw.world, import.meta.env.DEV ? window.location.origin : undefined)} onDistrictChange={(district) => setPanelDistrict(district ?? undefined)} onClose={closePanel} /> : null}
 
       {toastRegion}
       <MusicButton />
