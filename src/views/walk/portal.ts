@@ -3,13 +3,12 @@
    where every map built on this framework is a world of its own (src/network.ts). It is the walk
    world's half of the network's one requirement, so it is always built.
 
-   One ring (a torus in the network's two colors), a swirling disc inside it (a small shader,
-   still under reduced motion), a plinth with the words "The Nexus" on both faces, and a soft glow
+   A graphite frame, translucent warm light curtains (a small shader, static under reduced
+   motion), a compact Nexus nameplate on both faces, and a soft glow
    on the ground. Text is painted on a CPU-backed canvas (src/three/cpuCanvas.ts) and repainted
    when the web font arrives. */
 import * as THREE from "three";
 import { PORTAL } from "../../data/hub";
-import { NETWORK_NAME } from "../../network";
 import { cpuCanvas } from "../../three/cpuCanvas";
 import type { ScenePalette } from "./palette";
 import { canvasTexture, merge, paint, withNearFade } from "./util";
@@ -34,42 +33,36 @@ export function buildPortal(p: ScenePalette, own: Own, nearFade: { value: THREE.
   group.position.set(PORTAL.x, 0, PORTAL.z);
   group.rotation.y = PORTAL.facing;
   const R = PORTAL.r;
-  const cy = R + 0.55;
-  const cyan = new THREE.Color(NEXUS_CYAN);
-  const violet = new THREE.Color(NEXUS_VIOLET);
+  const cy = R + 0.24;
+  const amber = new THREE.Color("#e9a56e");
+  const rose = new THREE.Color("#cc7292");
 
-  // The ring, colored around its circumference from cyan to violet and back.
-  const torus = new THREE.TorusGeometry(R, 0.32, 14, 72);
-  const n = torus.attributes.position.count;
-  const col = new Float32Array(n * 3);
-  const c = new THREE.Color();
-  for (let i = 0; i < n; i++) {
-    const a = Math.atan2(torus.attributes.position.getY(i), torus.attributes.position.getX(i));
-    c.copy(cyan).lerp(violet, (Math.sin(a) + 1) / 2);
-    col.set([c.r, c.g, c.b], i * 3);
-  }
-  torus.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  torus.translate(0, cy, 0);
-  const ring = new THREE.Mesh(own(torus), own(withNearFade(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), nearFade)));
+  // A graphite frame holds a narrow warm light along the aperture.
+  const frameMaterial = own(withNearFade(new THREE.MeshLambertMaterial({ color: "#363638" }), nearFade));
+  const ring = new THREE.Mesh(own(new THREE.TorusGeometry(R, 0.16, 8, 64).translate(0, cy, 0)), frameMaterial);
   ring.name = "portal-ring";
+  ring.castShadow = true; ring.receiveShadow = true;
   group.add(ring);
+  const innerLight = new THREE.Mesh(own(new THREE.TorusGeometry(R - 0.115, 0.024, 6, 64).translate(0, cy, 0.10)),
+    own(withNearFade(new THREE.MeshBasicMaterial({ color: "#ffd1a3", toneMapped: false }), nearFade)));
+  group.add(innerLight);
 
   // The plinth under the ring, and the two posts the walker passes between.
-  const stone = p.ink.clone().lerp(p.rock, 0.25);
+  const stone = p.ink.clone().lerp(new THREE.Color("#454548"), 0.7);
   const plinth = merge([
-    paint(new THREE.BoxGeometry(R * 2 + 1.6, 0.5, PORTAL.depth + 0.8).translate(0, 0.25, 0), stone),
-    paint(new THREE.CylinderGeometry(0.42, 0.55, cy - 0.3, 10).translate(-R - 0.1, 0.5 + (cy - 0.3) / 2 - 0.25, 0), stone),
-    paint(new THREE.CylinderGeometry(0.42, 0.55, cy - 0.3, 10).translate(R + 0.1, 0.5 + (cy - 0.3) / 2 - 0.25, 0), stone),
+    paint(new THREE.BoxGeometry(R * 2 + 1.6, 0.16, PORTAL.depth + 0.8).translate(0, 0.08, 0), stone),
+    paint(new THREE.CylinderGeometry(0.16, 0.24, cy - 0.16, 8).translate(-R - 0.1, 0.16 + (cy - 0.16) / 2, 0), stone),
+    paint(new THREE.CylinderGeometry(0.16, 0.24, cy - 0.16, 8).translate(R + 0.1, 0.16 + (cy - 0.16) / 2, 0), stone),
   ]);
   const base = new THREE.Mesh(own(plinth), own(withNearFade(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }), nearFade)));
   base.castShadow = true;
   base.receiveShadow = true;
   group.add(base);
 
-  // The swirl inside the ring.
-  const uniforms = { uTime: { value: 0 }, uA: { value: cyan }, uB: { value: violet } };
+  // Slow vertical light folds leave the aperture translucent.
+  const uniforms = { uTime: { value: 0 }, uA: { value: amber }, uB: { value: rose } };
   const swirl = new THREE.Mesh(
-    own(new THREE.CircleGeometry(R - 0.2, 64).translate(0, cy, 0)),
+    own(new THREE.CircleGeometry(R - 0.16, 48).translate(0, cy, 0)),
     own(
       new THREE.ShaderMaterial({
         uniforms,
@@ -89,32 +82,36 @@ export function buildPortal(p: ScenePalette, own: Own, nearFade: { value: THREE.
           varying vec2 vUv;
           void main() {
             vec2 q = vUv - 0.5;
-            float r = length(q) * 2.0;
-            float a = atan(q.y, q.x);
-            float s = sin(a * 3.0 + r * 9.0 - uTime * 1.6) * 0.5 + 0.5;
-            vec3 col = mix(uA, uB, s);
-            col = mix(col, vec3(1.0), smoothstep(0.35, 0.0, r) * 0.55);
-            float alpha = (0.35 + 0.4 * s) * smoothstep(1.0, 0.82, r);
-            gl_FragColor = vec4(col, alpha);
+          float edge = 1.0 - smoothstep(0.88, 1.0, length(q) * 2.0);
+          float drift = uTime * 0.13;
+          float bend = sin(vUv.y * 4.2 + drift) * 0.09 + sin(vUv.y * 9.0 - drift * 0.7) * 0.025;
+          float folds = sin((vUv.x + bend) * 29.0 + drift);
+          float fine = sin((vUv.x + bend * 0.7) * 63.0 - drift * 0.5);
+          float ribbons = pow(0.5 + 0.5 * folds, 3.0);
+          float veil = smoothstep(0.0, 0.22, vUv.y) * (1.0 - smoothstep(0.72, 1.0, vUv.y));
+          vec3 col = mix(uA, uB, smoothstep(0.12, 0.9, vUv.y + fine * 0.07));
+          col = mix(col, vec3(1.0, 0.88, 0.73), ribbons * 0.32);
+          float alpha = edge * (0.10 + veil * (0.15 + ribbons * 0.40));
+          gl_FragColor = vec4(col, alpha);
             #include <colorspace_fragment>
           }`,
       }),
     ),
   );
-  swirl.name = "portal-swirl";
+  swirl.name = "portal-curtain";
   swirl.renderOrder = 2;
   group.add(swirl);
 
   // A glow on the ground before and behind it.
   const [gc, gctx] = cpuCanvas(128, 128);
   const g = gctx.createRadialGradient(64, 64, 4, 64, 64, 64);
-  g.addColorStop(0, "rgba(62,230,255,0.55)");
-  g.addColorStop(0.5, "rgba(139,92,246,0.22)");
-  g.addColorStop(1, "rgba(139,92,246,0)");
+  g.addColorStop(0, "rgba(238,171,117,0.24)");
+  g.addColorStop(0.5, "rgba(207,116,145,0.10)");
+  g.addColorStop(1, "rgba(207,116,145,0)");
   gctx.fillStyle = g;
   gctx.fillRect(0, 0, 128, 128);
   const glow = new THREE.Mesh(
-    own(new THREE.PlaneGeometry(R * 3.2, R * 3.2).rotateX(-Math.PI / 2).translate(0, 0.06, 0)),
+    own(new THREE.PlaneGeometry(R * 2.3, R * 1.6).rotateX(-Math.PI / 2).translate(0, 0.06, 0)),
     own(new THREE.MeshBasicMaterial({ map: own(canvasTexture(gc)), transparent: true, depthWrite: false, toneMapped: false })),
   );
   group.add(glow);
@@ -127,11 +124,8 @@ export function buildPortal(p: ScenePalette, own: Own, nearFade: { value: THREE.
     tctx.fillStyle = "#ffffff";
     tctx.textAlign = "center";
     tctx.textBaseline = "middle";
-    tctx.font = `700 78px "Instrument Sans", system-ui, sans-serif`;
-    tctx.fillText("THE NEXUS", 512, 58);
-    tctx.font = `500 40px "Instrument Sans", system-ui, sans-serif`;
-    tctx.fillStyle = NEXUS_CYAN;
-    tctx.fillText(NETWORK_NAME, 512, 124);
+    tctx.font = `500 88px "Instrument Sans", "DM Sans", sans-serif`;
+    tctx.fillText("Nexus", 512, 80);
     tex.needsUpdate = true;
   };
   paintWords();
@@ -139,9 +133,9 @@ export function buildPortal(p: ScenePalette, own: Own, nearFade: { value: THREE.
   (document.fonts?.ready ?? Promise.resolve()).then(() => !disposed && paintWords());
   const wordsMat = own(withNearFade(new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1 }), nearFade));
   // A dark plaque on the ring's crown carries them, readable from both sides.
-  const ww = R * 2.1;
+  const ww = R * 0.95;
   const wh = ww * (160 / 1024);
-  const plaqueY = cy + R + 0.35 + wh / 2;
+  const plaqueY = cy + R + 0.16 + wh / 2;
   const plaque = new THREE.Mesh(own(new THREE.BoxGeometry(ww + 0.3, wh + 0.2, 0.14).translate(0, plaqueY, 0)), own(withNearFade(new THREE.MeshLambertMaterial({ color: stone }), nearFade)));
   group.add(plaque);
   for (const side of [1, -1]) {
@@ -155,7 +149,7 @@ export function buildPortal(p: ScenePalette, own: Own, nearFade: { value: THREE.
     group,
     top: plaqueY + wh / 2 + 0.1,
     update(time, reduced) {
-      if (!reduced) uniforms.uTime.value = time;
+      uniforms.uTime.value = reduced ? 0 : time;
     },
     dispose() {
       disposed = true;

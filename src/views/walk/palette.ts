@@ -1,12 +1,10 @@
-/* The walk world's colors, read once from the design tokens.
-
-   Scene colors come from the --scene-* tokens and the brand tokens in
-   src/styles/tokens.css (site.json theme sets the brand ones); district
-   colors come from data. The scene is a
-   daylight scene in both themes, so it reads the tokens once at mount. */
+/* The walk world's current theme, read from --scene-* and brand tokens.
+   District colors keep their meaning in both themes. */
 import * as THREE from "three";
+import "./scene-theme.css";
 
 export interface ScenePalette {
+  dark: boolean;
   skyTop: THREE.Color;
   skyBottom: THREE.Color;
   sea: THREE.Color;
@@ -32,7 +30,7 @@ export interface ScenePalette {
   signPanel: THREE.Color;
   navy: THREE.Color;
   ink: THREE.Color;
-  /** Warm afternoon sunlight, derived from the sand and sky tokens. */
+  /** Daylight or neutral moonlight. */
   sun: THREE.Color;
   /** The same colors as CSS strings, for the 2D minimap. */
   css: Record<string, string>;
@@ -80,22 +78,40 @@ export function readScenePalette(): ScenePalette {
     colors[key] = c;
     css[key] = `#${c.getHexString()}`;
   }
-  const sun = new THREE.Color(1, 1, 1).lerp(colors.sand, 0.32);
+  const dark = cs?.colorScheme.includes("dark") ?? false;
+  const sun = dark ? new THREE.Color("#d4d4d8") : new THREE.Color(1, 1, 1).lerp(colors.sand, 0.32);
   css.sun = `#${sun.getHexString()}`;
-  return { ...(colors as Omit<ScenePalette, "sun" | "css">), sun, css } as ScenePalette;
+  return { ...(colors as Omit<ScenePalette, "dark" | "sun" | "css">), dark, sun, css } as ScenePalette;
 }
 
-let personScene: string | null = null;
+/** Watch theme changes without rebuilding the avatar, camera or multiplayer session. */
+export function watchScenePalette(change: (palette: ScenePalette) => void): () => void {
+  const initial = readScenePalette();
+  let last = JSON.stringify([initial.dark, initial.css]);
+  const refresh = () => {
+    const palette = readScenePalette();
+    const key = JSON.stringify([palette.dark, palette.css]);
+    if (key === last) return;
+    last = key;
+    change(palette);
+  };
+  const observer = new MutationObserver(refresh);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style", "class"] });
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", refresh);
+  return () => {
+    observer.disconnect();
+    media.removeEventListener("change", refresh);
+  };
+}
 
 /**
  * The People area's color in the walk world (--scene-person): a lighter tint of the person color,
  * since the badge ring's slate reads near black on large flat-shaded props. Not a district color.
  */
 export function personSceneColor(): string {
-  if (personScene) return personScene;
   const raw = typeof document !== "undefined" ? getComputedStyle(document.documentElement).getPropertyValue("--scene-person").trim() : "";
-  personScene = raw || "#6f8296";
-  return personScene;
+  return raw || "#6f8296";
 }
 
 /** A new color `t` of the way from a to b. */

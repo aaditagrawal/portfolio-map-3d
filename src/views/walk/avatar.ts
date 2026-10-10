@@ -4,7 +4,7 @@
    this one builder, so two visitors with different specs look clearly
    different, and the same spec always looks the same everywhere.
 
-   Each limb is one merged, vertex-colored mesh (7 draw calls per explorer).
+   Each limb segment is one merged mesh, with one shared material.
    Faces +z at heading 0; heading is rotation.y. */
 import * as THREE from "three";
 import type { AvatarSpec, Gear, Hat } from "../../live/identity";
@@ -43,6 +43,13 @@ const luma = (k: THREE.Color) => 0.2126 * k.r + 0.7152 * k.g + 0.0722 * k.b;
 
 type Part = THREE.BufferGeometry;
 const at = (g: Part, x: number, y: number, z: number, color: THREE.Color): Part => paint(g.translate(x, y, z), color);
+
+/** The lowest sole corner after hip and knee rotation, relative to the ground. */
+function footHeight(hipAngle: number, kneeAngle: number): number {
+  const angle = hipAngle + kneeAngle;
+  const toeOrHeel = Math.sin(angle) >= 0 ? 0.225 : -0.095;
+  return 0.76 - 0.36 * Math.cos(hipAngle) - 0.4 * Math.cos(angle) - toeOrHeel * Math.sin(angle);
+}
 
 /** The hat, in head-local coordinates (head center at the origin, skull radius 0.2). */
 export function hatParts(hat: Hat, accent: THREE.Color, body: THREE.Color): Part[] {
@@ -94,27 +101,27 @@ export function gearParts(gear: Gear, accent: THREE.Color, body: THREE.Color): P
   switch (gear) {
     case "backpack":
       return [
-        at(new THREE.BoxGeometry(0.4, 0.46, 0.2), 0, 1.2, -0.29, tone),
-        at(new THREE.BoxGeometry(0.42, 0.15, 0.22), 0, 1.38, -0.29, dark),
-        at(new THREE.BoxGeometry(0.26, 0.14, 0.06), 0, 1.08, -0.41, dark),
-        at(new THREE.BoxGeometry(0.06, 0.5, 0.03), -0.12, 1.22, 0.245, dark),
-        at(new THREE.BoxGeometry(0.06, 0.5, 0.03), 0.12, 1.22, 0.245, dark),
+        at(new THREE.BoxGeometry(0.36, 0.4, 0.18), 0, 1.08, -0.27, tone),
+        at(new THREE.BoxGeometry(0.38, 0.13, 0.2), 0, 1.25, -0.27, dark),
+        at(new THREE.BoxGeometry(0.24, 0.12, 0.05), 0, 0.98, -0.385, dark),
+        at(new THREE.BoxGeometry(0.055, 0.46, 0.03), -0.12, 1.08, 0.225, dark),
+        at(new THREE.BoxGeometry(0.055, 0.46, 0.03), 0.12, 1.08, 0.225, dark),
       ];
     case "satchel": {
-      const front = new THREE.BoxGeometry(0.06, 0.82, 0.03).rotateZ(0.72);
-      const back = new THREE.BoxGeometry(0.06, 0.82, 0.03).rotateZ(0.72);
+      const front = new THREE.BoxGeometry(0.055, 0.66, 0.03).rotateZ(0.72);
+      const back = new THREE.BoxGeometry(0.055, 0.66, 0.03).rotateZ(0.72);
       return [
-        at(front, 0.02, 1.2, 0.255, dark),
-        at(back, 0.02, 1.2, -0.255, dark),
+        at(front, 0.02, 1.07, 0.225, dark),
+        at(back, 0.02, 1.07, -0.225, dark),
         at(new THREE.BoxGeometry(0.14, 0.3, 0.34), 0.33, 0.93, 0.0, tone),
         at(new THREE.BoxGeometry(0.15, 0.1, 0.35), 0.33, 1.06, 0.0, dark),
       ];
     }
     case "scarf":
       return [
-        at(new THREE.TorusGeometry(0.17, 0.065, 6, 16).rotateX(Math.PI / 2), 0, 1.5, 0, tone),
-        at(new THREE.BoxGeometry(0.11, 0.34, 0.05).rotateZ(-0.12), 0.09, 1.32, 0.24, tone),
-        at(new THREE.BoxGeometry(0.11, 0.3, 0.05).rotateX(-0.25), -0.05, 1.33, -0.25, dark),
+        at(new THREE.TorusGeometry(0.14, 0.05, 6, 16).rotateX(Math.PI / 2), 0, 1.35, 0, tone),
+        at(new THREE.BoxGeometry(0.1, 0.3, 0.045).rotateZ(-0.12), 0.09, 1.18, 0.22, tone),
+        at(new THREE.BoxGeometry(0.1, 0.26, 0.045).rotateX(-0.25), -0.05, 1.19, -0.23, dark),
       ];
     case "none":
     default:
@@ -131,7 +138,8 @@ export function buildAvatar(spec: AvatarSpec): Avatar {
   const shirtDark = mixc(body, INK, 0.25);
   const hair = HAIR[specHash(spec, 1) % HAIR.length].clone();
   let pants = TROUSERS[specHash(spec, 2) % TROUSERS.length].clone();
-  if (Math.abs(luma(pants) - luma(body)) < 0.06) pants = mixc(pants, INK, 0.4);
+  if (luma(pants) > 0.25) pants = mixc(pants, INK, 0.3);
+  if (Math.abs(luma(pants) - luma(body)) < 0.1) pants = mixc(pants, INK, 0.45);
   const shoes = luma(accent) > 0.85 ? WHITE.clone() : mixc(accent, INK, 0.35);
   // A stripe across the shirt in the accent (or a contrasting tone when the accent matches the shirt).
   const stripe = Math.abs(luma(accent) - luma(body)) < 0.1 ? mixc(body, luma(body) > 0.5 ? INK : WHITE, 0.55) : accent;
@@ -148,37 +156,56 @@ export function buildAvatar(spec: AvatarSpec): Avatar {
     return m;
   };
 
-  // Legs: pivot at the hip so they swing.
+  // Shorter thighs, a knee pivot and boot soles give the stride a clear silhouette.
   const leg = (side: number) => {
     const pivot = new THREE.Group();
-    pivot.position.set(0.13 * side, 0.78, 0);
-    pivot.add(meshOf([at(new THREE.CapsuleGeometry(0.11, 0.44, 3, 8), 0, -0.36, 0, pants), at(new THREE.BoxGeometry(0.2, 0.12, 0.3), 0, -0.72, 0.05, shoes)]));
-    return pivot;
+    pivot.position.set(0.13 * side, 0.76, 0);
+    pivot.add(meshOf([at(new THREE.CapsuleGeometry(0.105, 0.17, 2, 8), 0, -0.16, 0, pants)]));
+    const knee = new THREE.Group();
+    knee.position.y = -0.36;
+    const sole = mixc(shoes, INK, 0.7);
+    knee.add(meshOf([
+      at(new THREE.SphereGeometry(0.095, 8, 6), 0, 0, 0, pants),
+      at(new THREE.CylinderGeometry(0.09, 0.075, 0.26, 8), 0, -0.15, 0, pants),
+      at(new THREE.CylinderGeometry(0.08, 0.08, 0.075, 8), 0, -0.282, 0, shirtDark),
+      at(new THREE.BoxGeometry(0.21, 0.13, 0.31), 0, -0.335, 0.065, shoes),
+      at(new THREE.BoxGeometry(0.22, 0.035, 0.32), 0, -0.3825, 0.065, sole),
+    ]));
+    pivot.add(knee);
+    return { pivot, knee };
   };
-  const leftLeg = leg(-1);
-  const rightLeg = leg(1);
+  const { pivot: leftLeg, knee: leftKnee } = leg(-1);
+  const { pivot: rightLeg, knee: rightKnee } = leg(1);
 
   const bodyGroup = new THREE.Group(); // everything above the hips bobs with the walk
-  const hip = meshOf([at(new THREE.CylinderGeometry(0.25, 0.23, 0.22, 10), 0, 0.84, 0, pants)]);
+  const hip = meshOf([
+    at(new THREE.CylinderGeometry(0.22, 0.235, 0.2, 10).scale(1, 1, 0.8), 0, 0.79, 0, pants),
+    at(new THREE.CylinderGeometry(0.223, 0.227, 0.045, 10).scale(1, 1, 0.8), 0, 0.85, 0, INK),
+  ]);
 
   // Chest (breathes): torso, collar and the gear.
   const chest = new THREE.Group();
-  chest.position.y = 0.92;
+  chest.position.y = 0.82;
   const chestParts = [
-    at(new THREE.CylinderGeometry(0.22, 0.28, 0.58, 10), 0, 1.2, 0, body),
-    at(new THREE.CylinderGeometry(0.246, 0.256, 0.09, 10), 0, 1.24, 0, stripe),
-    at(new THREE.CylinderGeometry(0.13, 0.2, 0.08, 10), 0, 1.5, 0, shirtDark),
+    at(new THREE.CylinderGeometry(0.28, 0.215, 0.52, 10).scale(1, 1, 0.78), 0, 1.07, 0, body),
+    at(new THREE.CylinderGeometry(0.259, 0.252, 0.055, 10).scale(1, 1, 0.78), 0, 1.13, 0, stripe),
+    at(new THREE.CylinderGeometry(0.085, 0.09, 0.13, 8), 0, 1.375, 0, skin),
+    at(new THREE.CylinderGeometry(0.105, 0.15, 0.065, 10).scale(1, 1, 0.85), 0, 1.325, 0, shirtDark),
     ...gearParts(spec.gear, accent, body),
   ];
-  for (const g of chestParts) g.translate(0, -0.92, 0);
+  for (const g of chestParts) g.translate(0, -0.82, 0);
   chest.add(meshOf(chestParts));
 
   // Arms: pivot at the shoulder.
   const arm = (side: number) => {
     const pivot = new THREE.Group();
-    pivot.position.set(0.3 * side, 1.43, 0);
-    pivot.rotation.z = 0.12 * side;
-    pivot.add(meshOf([at(new THREE.CapsuleGeometry(0.075, 0.36, 3, 8), 0, -0.24, 0, body), at(new THREE.SphereGeometry(0.075, 8, 6), 0, -0.5, 0, skin)]));
+    pivot.position.set(0.29 * side, 1.285, 0);
+    pivot.rotation.z = 0.065 * side;
+    pivot.add(meshOf([
+      at(new THREE.CapsuleGeometry(0.095, 0.15, 2, 8), 0, -0.12, 0, body),
+      at(new THREE.CapsuleGeometry(0.068, 0.15, 2, 8).rotateX(-0.13), 0, -0.355, 0.025, skin),
+      at(new THREE.SphereGeometry(0.076, 8, 6).scale(0.82, 1.05, 0.7), 0, -0.515, 0.047, skin),
+    ]));
     return pivot;
   };
   const leftArm = arm(-1);
@@ -186,16 +213,19 @@ export function buildAvatar(spec: AvatarSpec): Avatar {
 
   // Head: skull, hair, eyes, cheeks, hat.
   const head = new THREE.Group();
-  head.position.y = 1.66;
+  head.position.y = 1.58;
   const blush = mixc(skin, new THREE.Color("#ff8a8a"), 0.35);
   const headParts = [
-    at(new THREE.SphereGeometry(0.2, 14, 10), 0, 0, 0, skin),
-    at(new THREE.SphereGeometry(0.212, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.42).rotateX(-0.42), 0, 0.012, -0.01, hair),
-    at(new THREE.SphereGeometry(0.027, 6, 4), -0.075, 0.015, 0.183, INK),
-    at(new THREE.SphereGeometry(0.027, 6, 4), 0.075, 0.015, 0.183, INK),
-    at(new THREE.SphereGeometry(0.03, 6, 4).scale(1.3, 0.7, 0.5), -0.12, -0.05, 0.155, blush),
-    at(new THREE.SphereGeometry(0.03, 6, 4).scale(1.3, 0.7, 0.5), 0.12, -0.05, 0.155, blush),
-    ...hatParts(spec.hat, accent, body),
+    at(new THREE.SphereGeometry(0.225, 12, 9).scale(1, 1, 0.94), 0, 0, 0, skin),
+    at(new THREE.SphereGeometry(0.235, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.48).rotateX(-0.3), 0, 0.008, -0.012, hair),
+    at(new THREE.SphereGeometry(0.045, 6, 4).scale(0.7, 1, 0.8), -0.22, -0.005, -0.005, skin),
+    at(new THREE.SphereGeometry(0.045, 6, 4).scale(0.7, 1, 0.8), 0.22, -0.005, -0.005, skin),
+    at(new THREE.SphereGeometry(0.022, 6, 4), -0.078, 0.025, 0.2, INK),
+    at(new THREE.SphereGeometry(0.022, 6, 4), 0.078, 0.025, 0.2, INK),
+    at(new THREE.SphereGeometry(0.035, 6, 4).scale(0.8, 1.1, 1.15), 0, -0.035, 0.216, skin),
+    at(new THREE.SphereGeometry(0.03, 6, 4).scale(1.1, 0.65, 0.45), -0.12, -0.055, 0.18, blush),
+    at(new THREE.SphereGeometry(0.03, 6, 4).scale(1.1, 0.65, 0.45), 0.12, -0.055, 0.18, blush),
+    ...hatParts(spec.hat, accent, body).map((g) => g.scale(1.08, 1, 1.08)),
   ];
   head.add(meshOf(headParts));
 
@@ -203,11 +233,12 @@ export function buildAvatar(spec: AvatarSpec): Avatar {
 
   // A soft blob shadow keeps the walker grounded even outside the shadow map.
   const blobMat = new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.22, depthWrite: false });
-  const blobGeo = new THREE.CircleGeometry(0.42, 20);
+  const blobGeo = new THREE.CircleGeometry(0.38, 20).scale(1, 0.8, 1);
   geos.push(blobGeo);
   const blob = new THREE.Mesh(blobGeo, blobMat);
-  blob.rotation.x = -Math.PI / 2;
-  blob.position.y = 0.05;
+  blob.name = "avatar-shadow";
+    blob.rotation.x = -Math.PI / 2;
+  blob.position.y = 0.035;
   blob.renderOrder = 2;
 
   const figure = new THREE.Group();
@@ -221,25 +252,31 @@ export function buildAvatar(spec: AvatarSpec): Avatar {
   const animate = (dt: number, time: number, speed01: number, reduced: boolean) => {
     if (reduced) {
       leftLeg.rotation.x = rightLeg.rotation.x = 0;
+      leftKnee.rotation.x = rightKnee.rotation.x = 0;
       leftArm.rotation.x = rightArm.rotation.x = 0;
       bodyGroup.position.y = 0;
       bodyGroup.rotation.x = 0;
       chest.scale.set(1, 1, 1);
       head.rotation.y = 0;
+      figure.position.y = 0;
       return;
     }
     const moving = speed01 > 0.02;
     const run = speed01 > 1.05;
     phase += dt * (run ? 13 : 9.5) * Math.max(0.35, Math.min(1, speed01));
-    const targetAmp = moving ? (run ? 0.85 : 0.6) * Math.min(1, speed01 + 0.25) : 0;
+    const targetAmp = moving ? (run ? 0.72 : 0.48) * Math.min(1, speed01 + 0.25) : 0;
     swingAmp += (targetAmp - swingAmp) * Math.min(1, dt * 12);
     const swing = Math.sin(phase) * swingAmp;
     leftLeg.rotation.x = swing;
     rightLeg.rotation.x = -swing;
+    const kneeBend = (run ? 0.85 : 0.5) * Math.min(1, swingAmp / 0.48);
+    leftKnee.rotation.x = Math.max(0, Math.sin(phase)) * kneeBend;
+    rightKnee.rotation.x = Math.max(0, -Math.sin(phase)) * kneeBend;
+    figure.position.y = -scale * Math.min(footHeight(swing, leftKnee.rotation.x), footHeight(-swing, rightKnee.rotation.x));
     leftArm.rotation.x = -swing * 0.9;
     rightArm.rotation.x = swing * 0.9;
     const breathe = Math.sin(time * 2.1 + lookPhase);
-    bodyGroup.position.y = moving ? Math.abs(Math.sin(phase)) * 0.07 * swingAmp : breathe * 0.01;
+    bodyGroup.position.y = moving ? Math.abs(Math.sin(phase * 2)) * 0.025 * swingAmp : breathe * 0.008;
     const k = moving ? 0 : 1;
     chest.scale.set(1 + breathe * 0.014 * k, 1 + breathe * 0.024 * k, 1 + breathe * 0.014 * k);
     bodyGroup.rotation.x = run ? 0.12 : moving ? 0.04 : 0;

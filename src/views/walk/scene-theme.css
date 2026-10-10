@@ -1,0 +1,52 @@
+/* Neutral night materials follow the interface's explicit or system theme. */
+:root[data-theme="dark"] {
+  --scene-sky-top: #141416;
+  --scene-sky-bottom: #424247;
+  --scene-sea: #41484a;
+  --scene-sea-deep: #18181b;
+  --scene-sand: #78716c;
+  --scene-grass: #657365;
+  --scene-grass-dark: #4f5d51;
+  --scene-road: #71717a;
+  --scene-plaza: #52525b;
+  --scene-tree: #738b77;
+  --scene-tree-dark: #526c57;
+  --scene-trunk: #78716c;
+  --scene-rock: #71717a;
+  --scene-paint: #71717a;
+  --scene-coping: #a1a1aa;
+  --scene-membrane: #52525b;
+  --scene-roof-white: #a1a1aa;
+  --scene-fascia: #424247;
+  --scene-concrete: #52525b;
+  --scene-mulch: #292524;
+  --scene-glass: #18181b;
+  --scene-sign-panel: #e4e4e7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --scene-sky-top: #141416;
+    --scene-sky-bottom: #424247;
+    --scene-sea: #41484a;
+    --scene-sea-deep: #18181b;
+    --scene-sand: #78716c;
+    --scene-grass: #657365;
+    --scene-grass-dark: #4f5d51;
+    --scene-road: #71717a;
+    --scene-plaza: #52525b;
+    --scene-tree: #738b77;
+    --scene-tree-dark: #526c57;
+    --scene-trunk: #78716c;
+    --scene-rock: #71717a;
+    --scene-paint: #71717a;
+    --scene-coping: #a1a1aa;
+    --scene-membrane: #52525b;
+    --scene-roof-white: #a1a1aa;
+    --scene-fascia: #424247;
+    --scene-concrete: #52525b;
+    --scene-mulch: #292524;
+    --scene-glass: #18181b;
+    --scene-sign-panel: #e4e4e7;
+  }
+}

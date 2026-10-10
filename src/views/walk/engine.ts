@@ -17,11 +17,13 @@ import type { AvatarSpec } from "../../live/identity";
 import type { LiveSession, LiveState } from "../../live/presence";
 import type { FlyRequest } from "../../state/store";
 import { useStore } from "../../state/store";
+import { buildCar, CAR_SPEED, CAR_SPRINT_SPEED, CAR_COLLISION_RADIUS, canEnterCar, findCarSpawn, findCarExit } from "./car";
+import { LEAP_DURATION, LEAP_SPEED, LEAP_RUN_SPEED, leapHeight } from "./leap";
 import { buildAvatar, type Avatar } from "./avatar";
 import { Explorers, type ExplorerDot } from "./explorers";
 import { Minimap } from "./minimap";
-import { ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN, cameraRelative, clearPitch, districtEntrance, lookLift, pitchFor, resolveCollisions, standNear, type Circle } from "./nav";
-import { mix, readScenePalette, type ScenePalette } from "./palette";
+import { AVATAR_RADIUS, ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN, cameraRelative, clearPitch, districtEntrance, lookLift, pitchFor, resolveCollisions, standNear, type Circle } from "./nav";
+import { mix, readScenePalette, watchScenePalette, type ScenePalette } from "./palette";
 import { walkAreas } from "./areas";
 import { FADED, buildPins, type PinSystem } from "./pins";
 import { createTerrain, type Terrain } from "./terrain";
@@ -64,6 +66,8 @@ export interface EngineHooks {
   onDistrict(slug: AreaSlug | null): void;
   /** Movement was attempted while controls are paused (sheet/panel focused). */
   onPausedNudge(): void;
+  onTravelMessage?(message: string | null): void;
+  onCar?(action: "summon" | "enter" | "exit"): void;
 }
 
 export interface Overlay {
@@ -139,6 +143,13 @@ export class WalkEngine {
   x: number;
   z: number;
   heading: number;
+  private leap: { elapsed: number; x: number; z: number; speed: number } | null = null;
+  private lift = 0;
+  readonly car = buildCar();
+  private driving = false;
+  private carAction: "summon" | "enter" | "exit" = "summon";
+  private carMoving = 0;
+  private walkDistance = ZOOM_DEFAULT;
   private speed01 = 0;
   private running = false;
   private district: AreaSlug | null = null;
@@ -198,6 +209,7 @@ export class WalkEngine {
   private appliedShift = 0;
   private appliedSize = "";
   private disposed = false;
+  private stopPaletteWatch: () => void;
   private viewEl: HTMLElement | null = null;
   private sheetPx = 0;
   private padKey = "";
@@ -231,6 +243,7 @@ export class WalkEngine {
     this.tagLayer.className = "walk-tags";
     this.explorers = new Explorers(this.tagLayer, (x, z) => this.groundAt(x, z));
     this.avatar = buildAvatar(avatarSpec);
+    this.car.root.visible = false;
     const base = this.layout.spawn;
     const side = visitorId ? ((hashString(visitorId) % 1001) / 1000 - 0.5) * 5 : 0;
     const at = resolveCollisions(this.layout, base.x + side, base.z, this.colliders, this.world.boxes);
@@ -239,9 +252,24 @@ export class WalkEngine {
     this.z = spawn.z;
     this.heading = spawn.facing;
     this.yaw = this.yawTarget = spawn.facing + Math.PI;
+    this.stopPaletteWatch = watchScenePalette((palette) => this.setPalette(palette));
   }
 
   /* ---------------- lifecycle ---------------- */
+
+  private setPalette(palette: ScenePalette): void {
+    if (this.disposed) return;
+    this.world.setPalette(palette);
+    Object.assign(this.palette, palette);
+    if (this.scene) {
+      this.scene.background = palette.skyBottom.clone();
+      const fog = this.scene.fog;
+      if (fog instanceof THREE.Fog) fog.color.copy(mix(palette.skyBottom, palette.skyTop, 0.25));
+    }
+    this.minimap?.setPalette(palette);
+    this.drawMinimap();
+    this.shadowHalf = 0;
+  }
 
   attach(scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
     this.scene = scene;
@@ -249,7 +277,7 @@ export class WalkEngine {
     const p = this.palette;
     scene.background = p.skyBottom.clone();
     scene.fog = new THREE.Fog(mix(p.skyBottom, p.skyTop, 0.25), 90, 420);
-    scene.add(this.world.root, this.pins.root, this.avatar.root, this.explorers.root);
+    scene.add(this.world.root, this.pins.root, this.avatar.root, this.explorers.root, this.car.root);
     this.placeAvatar();
     this.setSize(this.width, this.height);
     this.updateCamera(1, true);
@@ -298,6 +326,7 @@ export class WalkEngine {
   setAvatar(spec: AvatarSpec): void {
     const old = this.avatar;
     this.avatar = buildAvatar(spec);
+    this.avatar.root.visible = !this.driving;
     if (this.scene) {
       this.scene.remove(old.root);
       this.scene.add(this.avatar.root);
@@ -308,12 +337,14 @@ export class WalkEngine {
 
   dispose(): void {
     this.disposed = true;
+    this.stopPaletteWatch();
     window.clearTimeout(this.fadeTimer);
-    if (this.scene) this.scene.remove(this.world.root, this.pins.root, this.avatar.root, this.explorers.root);
+    if (this.scene) this.scene.remove(this.world.root, this.pins.root, this.avatar.root, this.explorers.root, this.car.root);
     if (this.scene) this.scene.fog = null;
     this.world.dispose();
     this.pins.dispose();
     this.avatar.dispose();
+    this.car.dispose();
     this.explorers.dispose();
     this.tagLayer.remove();
   }
@@ -368,6 +399,11 @@ export class WalkEngine {
 
   private teleport(x: number, z: number, heading: number, dist?: number, yawOffset = 0, tilt = 0): void {
     const go = () => {
+      this.leap = null;
+      this.lift = 0;
+      this.driving = false;
+      this.avatar.root.visible = true;
+      this.syncCarAction();
       this.x = x;
       this.z = z;
       this.heading = heading;
@@ -467,6 +503,18 @@ export class WalkEngine {
         return;
       }
       if (e.key === "Shift") this.shift = true;
+      else if (e.code === "Space") {
+        if (!t || !viewEl.contains(t)) return;
+        if (t?.closest(ENTER_CONTROLS) || t?.closest(".walk-intro, .sheet, .panel")) return;
+        e.preventDefault();
+        if (!e.repeat) this.jump();
+      }
+      else if (e.code === "KeyF") {
+        if (!t || !viewEl.contains(t)) return;
+        if (t?.closest(ENTER_CONTROLS) || t?.closest(".walk-intro, .sheet, .panel")) return;
+        e.preventDefault();
+        if (!e.repeat) this.useCar();
+      }
       else if (e.code === "KeyQ") this.rotate.q = true;
       else if (e.code === "KeyE") this.rotate.e = true;
       else if (e.key === "Enter") {
@@ -476,7 +524,7 @@ export class WalkEngine {
         if (this.near && !this.keysPaused()) {
           e.preventDefault();
           this.meet(this.near);
-        } else if (this.portal !== "far" && !this.keysPaused()) {
+        } else if (this.portal !== "far" && !this.keysPaused() && !this.leap && !this.driving) {
           e.preventDefault();
           this.hooks.onPortalEnter();
         }
@@ -735,7 +783,7 @@ export class WalkEngine {
     }
 
     this.step(dt);
-    const portal = portalStateAt(this.x, this.z);
+    const portal = this.leap || this.driving ? "far" : portalStateAt(this.x, this.z);
     if (portal !== this.portal) {
       this.portal = portal;
       this.hooks.onPortal(portal);
@@ -743,7 +791,9 @@ export class WalkEngine {
     this.updateCamera(dt, false);
     this.world.update(this.time, dt, this.reduced, this.yaw);
     this.pins.update(now / 1000, dt, this.time, this.reduced, this.camera, this.camera.position.distanceTo(this.camTarget));
-    this.avatar.animate(dt, this.time, this.speed01, this.reduced);
+    this.avatar.animate(dt, this.time, this.leap ? 0 : this.speed01, this.reduced);
+    this.car.animate(dt, this.carMoving);
+    this.syncCarAction();
     this.explorers.update(now, dt, this.time, this.reduced, this.camera, this.width, this.height, this);
     this.followSun();
     this.updateLabels();
@@ -784,29 +834,96 @@ export class WalkEngine {
     }
     const mag = Math.min(1, Math.hypot(f, r));
     this.running = this.shift;
-    if (mag < 0.05) {
+    const motionDt = this.leap ? Math.min(dt, LEAP_DURATION - this.leap.elapsed) : dt;
+    if (this.leap) {
+      this.leap.elapsed = Math.min(LEAP_DURATION, this.leap.elapsed + dt);
+      this.lift = leapHeight(this.leap.elapsed);
+    }
+    if (mag < 0.05 && !this.leap) {
       this.speed01 += (0 - this.speed01) * damp(14, dt);
+      this.carMoving = 0;
       if (this.speed01 < 0.01) this.speed01 = 0;
+      this.placeAvatar();
       return;
     }
-    const dir = cameraRelative(f, r, this.yaw);
-    const speed = WALK_SPEED * (this.running ? RUN_MULTIPLIER : 1) * mag;
-    // Sub-step so a long frame can't tunnel through a lamp post or a pin.
-    const travel = speed * dt;
+    const dir = this.leap ? { x: this.leap.x, z: this.leap.z } : cameraRelative(f, r, this.yaw);
+    const speed = this.leap ? this.leap.speed : this.driving
+      ? (this.running ? CAR_SPRINT_SPEED : CAR_SPEED) * mag
+      : WALK_SPEED * (this.running ? RUN_MULTIPLIER : 1) * mag;
+    const travel = speed * motionDt;
     const steps = Math.max(1, Math.ceil(travel / 0.35));
     const x0 = this.x;
     const z0 = this.z;
+    const obstacles = this.driving || !this.car.root.visible ? this.colliders
+      : [...this.colliders, { x: this.car.root.position.x, z: this.car.root.position.z, r: CAR_COLLISION_RADIUS }];
     for (let k = 0; k < steps; k++) {
-      const p = resolveCollisions(this.layout, this.x + (dir.x * travel) / steps, this.z + (dir.z * travel) / steps, this.colliders, this.world.boxes);
+      const p = resolveCollisions(this.layout, this.x + (dir.x * travel) / steps,
+        this.z + (dir.z * travel) / steps, obstacles, this.world.boxes,
+        this.driving ? CAR_COLLISION_RADIUS : undefined);
       this.x = p.x;
       this.z = p.z;
     }
     const moved = Math.hypot(this.x - x0, this.z - z0);
     const want = Math.atan2(dir.x, dir.z);
-    this.heading = this.reduced ? want : lerpAngle(this.heading, want, damp(14, dt));
+    this.heading = this.reduced ? want : lerpAngle(this.heading, want, damp(this.driving ? 8 : 14, dt));
+    this.carMoving = this.driving && dt > 0 ? moved / dt : 0;
     const actual = dt > 0 ? moved / dt / WALK_SPEED : 0;
     this.speed01 += (Math.min(RUN_MULTIPLIER, actual) - this.speed01) * damp(16, dt);
+    if (this.leap && this.leap.elapsed >= LEAP_DURATION) {
+      this.leap = null;
+      this.lift = 0;
+    }
     this.placeAvatar();
+  }
+
+  jump(): void {
+    if (this.leap || this.driving || this.keysPaused() || document.activeElement?.closest(".walk-intro")) return;
+    let f = Number(this.keys.has("f") || this.pad.f) - Number(this.keys.has("b") || this.pad.b);
+    let r = Number(this.keys.has("r") || this.pad.r) - Number(this.keys.has("l") || this.pad.l);
+    if (this.stick.live) { f += this.stick.y; r += this.stick.x; }
+    const dir = cameraRelative(f || r ? f : 1, r, this.yaw);
+    this.leap = { elapsed: 0, x: dir.x, z: dir.z, speed: this.shift ? LEAP_RUN_SPEED : LEAP_SPEED };
+  }
+
+  private canPark = (point: { x: number; y: number }, radius: number): boolean => {
+    const p = resolveCollisions(this.layout, point.x, point.y, this.colliders, this.world.boxes, radius);
+    return Math.hypot(p.x - point.x, p.z - point.y) < 0.01;
+  };
+
+  private syncCarAction(): void {
+    const next = this.driving ? "exit" : this.car.root.visible && canEnterCar(
+      { x: this.x, y: this.z }, { x: this.car.root.position.x, y: this.car.root.position.z }) ? "enter" : "summon";
+    if (next !== this.carAction) { this.carAction = next; this.hooks.onCar?.(next); }
+  }
+
+  useCar(): void {
+    if (this.leap || this.keysPaused()) return;
+    this.clearInput();
+    this.hooks.onTravelMessage?.(null);
+    if (this.driving) {
+      const spot = findCarExit({ x: this.x, y: this.z }, this.heading, this.canPark, AVATAR_RADIUS);
+      if (!spot) { this.hooks.onTravelMessage?.("Move to open ground to exit."); return; }
+      this.x = spot.x; this.z = spot.y;
+      this.driving = false;
+      this.avatar.root.visible = true;
+      this.distTarget = this.walkDistance;
+    } else if (this.car.root.visible && canEnterCar({ x: this.x, y: this.z },
+      { x: this.car.root.position.x, y: this.car.root.position.z })) {
+      this.x = this.car.root.position.x; this.z = this.car.root.position.z;
+      this.heading = this.car.root.rotation.y;
+      this.driving = true;
+      this.avatar.root.visible = false;
+      this.walkDistance = this.distTarget;
+      this.distTarget = Math.max(24, this.distTarget);
+    } else {
+      const spot = findCarSpawn({ x: this.x, y: this.z }, this.heading, this.canPark);
+      if (!spot) { this.hooks.onTravelMessage?.("Move to open ground to summon a car."); return; }
+      this.car.root.position.set(spot.x, this.groundAt(spot.x, spot.y), spot.y);
+      this.car.root.rotation.y = this.heading;
+      this.car.root.visible = true;
+    }
+    this.placeAvatar();
+    this.syncCarAction();
   }
 
   private groundAt(x: number, z: number): number {
@@ -814,8 +931,14 @@ export class WalkEngine {
   }
 
   private placeAvatar() {
-    this.avatar.root.position.set(this.x, this.groundAt(this.x, this.z), this.z);
+    this.avatar.root.position.set(this.x, this.groundAt(this.x, this.z) + this.lift, this.z);
     this.avatar.root.rotation.y = this.heading;
+    const shadow = this.avatar.root.getObjectByName("avatar-shadow");
+    if (shadow) shadow.position.y = 0.035 - this.lift;
+    if (this.driving) {
+      this.car.root.position.set(this.x, this.groundAt(this.x, this.z), this.z);
+      this.car.root.rotation.y = this.heading;
+    }
   }
 
   private updateCamera(dt: number, snap: boolean) {
@@ -831,7 +954,7 @@ export class WalkEngine {
     this.pitchLift = instant ? need : this.pitchLift + (need - this.pitchLift) * damp(need > this.pitchLift ? 6 : 1.6, dt);
     const pitch = basePitch + this.pitchLift;
     const tx = this.x;
-    const ty = gy + 1.35;
+    const ty = gy + 1.35 + this.lift * 0.65;
     const tz = this.z;
     if (instant) this.camTarget.set(tx, ty, tz);
     else {
@@ -966,6 +1089,7 @@ export class WalkEngine {
     const focused = document.activeElement;
     this.rects.length = 0;
     for (const v of this.reserved) this.rects.push(v);
+    this.reservePortalLabelSpace();
 
     // Companies and people first (nearest first): name buttons for the closest pins.
     const pins = this.pins;
@@ -1071,6 +1195,26 @@ export class WalkEngine {
       this.near = near;
       this.hooks.onNear(near);
     }
+  }
+
+  /** Keep projected names out of the portal's opening while it is nearby. */
+  private reservePortalLabelSpace(): void {
+    if (Math.hypot(this.x - PORTAL.x, this.z - PORTAL.z) > 35) return;
+    const acrossX = Math.cos(PORTAL.facing) * (PORTAL.r + 0.3);
+    const acrossZ = -Math.sin(PORTAL.facing) * (PORTAL.r + 0.3);
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const side of [-1, 1]) {
+      for (const y of [0, PORTAL.r * 2 + 1.3]) {
+        this.v.set(PORTAL.x + side * acrossX, y, PORTAL.z + side * acrossZ).project(this.camera!);
+        if (this.v.z < -1 || this.v.z > 1) return;
+        const x = (this.v.x * 0.5 + 0.5) * this.width;
+        const sy = (-this.v.y * 0.5 + 0.5) * this.height;
+        left = Math.min(left, x);right = Math.max(right, x);
+        top = Math.min(top, sy);bottom = Math.max(bottom, sy);
+      }
+    }
+    if (right < 0 || left > this.width || bottom < 0 || top > this.height) return;
+    this.rects.push(left, top, right - left, bottom - top);
   }
 
   /** Does a screen rect touch the rooftop sign or its pole (with a little room around them)? */

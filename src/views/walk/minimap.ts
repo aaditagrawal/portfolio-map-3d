@@ -23,10 +23,10 @@ export class Minimap {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly size: number,
-    layout: WorldLayout,
-    terrain: Terrain,
-    districts: readonly { slug: string; color: string }[],
-    pins: { xs: Float32Array; zs: Float32Array; colorOf: (i: number) => string },
+    private readonly layout: WorldLayout,
+    private readonly terrain: Terrain,
+    private readonly districts: readonly { slug: string; color: string }[],
+    private readonly pins: { xs: Float32Array; zs: Float32Array; colorOf: (i: number) => string },
     p: ScenePalette,
   ) {
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -54,8 +54,13 @@ export class Minimap {
     return this.size / 2 / this.extent;
   }
 
+  setPalette(palette: ScenePalette): void {
+    this.drawStatic(this.layout, this.terrain, this.districts, this.pins, palette);
+  }
+
   private drawStatic(layout: WorldLayout, terrain: Terrain, districts: readonly { slug: string; color: string }[], pins: { xs: Float32Array; zs: Float32Array; colorOf: (i: number) => string }, p: ScenePalette) {
     const c = cpuContext(this.bg);
+    c.setTransform(1, 0, 0, 1, 0, 0);
     const k = this.dpr;
     c.scale(k, k);
     const S = this.size;

@@ -29,22 +29,54 @@
 /* An open popover rises above the top-right controls it may overlap on phones. */
 .walk-hud-tl:has(.walk-pop) { z-index: 9; }
 .walk-hud-tl { top: 12px; left: 12px; width: min(360px, calc(100% - 24px)); display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
-.walk-intro { position: relative; padding: 16px 18px 16px; width: 100%; }
-.walk-intro h2 { margin: 2px 0 6px; font-size: 19px; line-height: 1.22; padding-right: 22px; }
-.walk-intro p { margin: 0 0 10px; color: var(--text-muted); font-size: 14px; line-height: 1.5; }
-.walk-eyebrow { margin: 0 !important; font-size: 11.5px !important; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent) !important; }
-.walk-keys { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 5px; font-size: 13px; color: var(--text-muted); }
-.walk-keys kbd { margin: 0 1px; }
-.walk-intro-go { height: 36px; }
-.walk-intro .walk-touch-hint { display: none; }
-@media (pointer: coarse) {
-  .walk-intro .walk-touch-hint { display: block; }
+/* A short nonmodal introduction. Extra controls stay behind a disclosure. */
+.walk-intro {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-height: calc(100dvh - var(--topbar-h) - 24px);
+  padding: 16px;
+  overflow-y: auto;
+  border-color: var(--walk-help-border);
+  border-radius: 12px;
+  background: var(--walk-help-bg);
+  color: var(--walk-help-text);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  user-select: text;
+  -webkit-user-select: text;
 }
+.walk-intro h2 { margin: 0; padding-right: 40px; font: 500 16px/1.5 var(--font-heading); }
+.walk-intro h2:focus { outline: none; }
+.walk-intro p { margin: 0; color: var(--walk-help-muted); font: 400 16px/1.5 var(--font-sans); }
 .walk-card-x {
-  position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 30px; height: 30px;
-  border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted);
+  position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 44px; height: 44px;
+  border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--walk-help-muted);
 }
-.walk-card-x:hover { background: var(--surface-alt); color: var(--text); }
+.walk-card-x:hover { background: color-mix(in srgb, var(--walk-help-text) 8%, transparent); color: var(--walk-help-text); }
+.walk-controls { color: var(--walk-help-muted); font: 400 13px/1.5 var(--font-mono); }
+.walk-controls summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; list-style: none; color: var(--walk-help-text); cursor: pointer; }
+.walk-controls summary::-webkit-details-marker { display: none; }
+.walk-controls[open] summary svg { transform: rotate(180deg); }
+.walk-controls dl { display: grid; gap: 8px; margin: 0; padding: 0 0 8px; }
+.walk-controls dl > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.walk-controls dt, .walk-controls dd { margin: 0; }
+.walk-controls dd { overflow-wrap: anywhere; }
+.walk-controls kbd { font: inherit; color: var(--walk-help-text); background: transparent; border: 0; box-shadow: none; padding: 0; }
+.walk-controls .walk-touch-controls { display: none; }
+.walk-nexus-return {
+  display: inline-flex; align-items: center; justify-self: start; gap: 8px; min-height: 44px;
+  color: var(--walk-help-text); font: 400 13px/1.5 var(--font-mono); text-decoration: none;
+}
+.walk-nexus-return svg { flex: none; }
+.walk-nexus-return:hover { text-decoration: underline; }
+.walk-row { flex-wrap: wrap; }
+.walk-row .walk-nexus-return { padding: 0 12px; border-radius: var(--radius-pill); background: var(--walk-help-bg); border: 1px solid var(--walk-help-border); }
+@media (pointer: coarse) {
+  .walk-controls .walk-keyboard-controls { display: none; }
+  .walk-controls .walk-touch-controls { display: grid; }
+}
 
 /* live pill + popover */
 .walk-live { position: relative; }
@@ -209,10 +241,10 @@
 /* ---------- small screens ---------- */
 @media (max-width: 760px) {
   .walk-hud-tl { top: 10px; left: 10px; width: calc(100% - 20px - 104px); }
-  .walk-intro { padding: 12px 14px; }
-  .walk-intro h2 { font-size: 16px; }
-  .walk-intro p { font-size: 13px; margin-bottom: 8px; }
-  .walk-keys { display: none; }
+  .walk-hud-tl:has(.walk-intro) { width: calc(100% - 20px); }
+  .walk-view:has(.walk-intro) .walk-hud-tr { display: none; }
+  .walk-intro { padding: 16px; }
+  .walk-controls dl > div { grid-template-columns: 80px minmax(0, 1fr); }
   .walk-hud-tr { top: 10px; right: 10px; }
   .walk-minimap { padding: 4px; }
   .walk-pill { height: 36px; padding: 0 11px 0 10px; font-size: 12.5px; }
@@ -256,3 +288,9 @@
 .walk-portal-actions .btn { text-decoration: none; min-height: 44px; }
 .walk-portal-actions .btn-quiet { color: #fff; border-color: rgb(255 255 255 / 0.4); background: transparent; }
 @media (prefers-reduced-motion: reduce) { .walk-portal-departure { animation: none; } }
+
+.walk-travel-controls { left: 12px; bottom: calc(var(--sheet-h) + 16px); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100% - 180px); }
+.walk-travel-controls .walk-pill { min-height: 44px; }
+.walk-travel-controls kbd { margin-left: 4px; }
+.walk-travel-message { max-width: 200px; padding: 8px; border-radius: var(--radius-sm); color: var(--text); background: var(--surface); font: 400 13px/1.5 var(--font-sans); }
+@media (max-width: 760px) { .walk-travel-controls { left: 10px; bottom: calc(var(--sheet-h) + 12px); } }

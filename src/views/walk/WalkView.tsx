@@ -15,12 +15,12 @@
    useFrame). React renders only the HUD and the projected label buttons;
    the engine positions those buttons itself every frame. */
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronUp, CircleHelp, LocateFixed, Map as MapIcon, Minus, Orbit, Plus, Shuffle, UserRound, Users, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronUp, Car, CircleHelp, LocateFixed, Map as MapIcon, Minus, Orbit, Plus, Shuffle, UserRound, Users, X } from "lucide-react";
 import { Component, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import type { PerspectiveCamera } from "three";
-import { COMPANIES, HAS_PEOPLE, PEOPLE, SITE, companyBySlug, districtBySlug, personBySlug } from "../../data/catalog";
-import { NETWORK_NAME, PORTAL_HREF } from "../../network";
-import { L, article } from "../../site";
+import { COMPANIES, PEOPLE, SITE, companyBySlug, districtBySlug, personBySlug } from "../../data/catalog";
+import { ARRIVED_FROM_NEXUS, NETWORK_NAME, NEXUS_HREF, PORTAL_HREF } from "../../network";
+import { L } from "../../site";
 import type { AreaSlug } from "../../data/layout";
 import type { DistrictSlug } from "../../data/types";
 import { getVisitor, onVisitorChange, rerollVisitor, type AvatarSpec, type Visitor } from "../../live/identity";
@@ -239,6 +239,8 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
   const reduced = useReducedMotion();
   const viewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<WalkEngine | null>(null);
+  const [carAction, setCarAction] = useState<"summon" | "enter" | "exit">("summon");
+  const [travelMessage, setTravelMessage] = useState<string | null>(null);
   const [near, setNear] = useState<string | null>(null);
   const [portal, setPortal] = useState<PortalState>("far");
   const [leaving, setLeaving] = useState(false);
@@ -248,7 +250,7 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
   const [me, setMe] = useState<Visitor>(getVisitor);
   const [live, setLive] = useState<LiveSummary>({ transport: "off", status: "connecting", reason: null, others: [] });
   const [showOthers, setShowOthers] = useState(() => readFlag(SHOW_OTHERS_KEY) !== "0");
-  const [narrow] = useState(() => {
+  const [narrow, setNarrow] = useState(() => {
     try {
       return window.matchMedia("(max-width: 760px)").matches;
     } catch {
@@ -256,6 +258,16 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
     }
   });
   const [mapOpen, setMapOpen] = useState(!narrow);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 760px)");
+    const resize = () => {
+      setNarrow(mq.matches);
+      setMapOpen(!mq.matches);
+    };
+    mq.addEventListener("change", resize);
+    return () => mq.removeEventListener("change", resize);
+  }, []);
+  const mapVisible = mapOpen && !intro;
   const MINIMAP_SIZE = narrow ? 140 : 180;
   const sessionRef = useRef<LiveSession | null>(null);
 
@@ -273,6 +285,8 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
       e = new WalkEngine(
         {
           onNear: (slug) => setNear(slug),
+          onCar: setCarAction,
+          onTravelMessage: setTravelMessage,
           onDistrict: (slug) => {
             if (slug) setBanner({ slug, key: ++bannerKey });
           },
@@ -386,10 +400,10 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
   const minimapRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (!engine) return;
-    engine.setMinimap(mapOpen ? minimapRef.current : null, MINIMAP_SIZE);
+    engine.setMinimap(mapVisible ? minimapRef.current : null, MINIMAP_SIZE);
     engine.hudChanged();
     return () => engine.setMinimap(null, MINIMAP_SIZE);
-  }, [engine, mapOpen, MINIMAP_SIZE]);
+  }, [engine, mapVisible, MINIMAP_SIZE]);
 
   const select = useStore((s) => s.select);
   const selectPerson = useStore((s) => s.selectPerson);
@@ -416,7 +430,7 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
   // view switch that was clicked, unless the visitor is typing or reading the details sheet or a panel.
   useEffect(() => {
     const ae = document.activeElement;
-    if (isTextField(ae) || ae?.closest(".sheet, .panel")) return;
+    if (isTextField(ae) || ae?.closest(".sheet, .panel, .walk-intro")) return;
     viewRef.current?.focus({ preventScroll: true });
   }, []);
   // Chrome leaves focus on a clicked button, where Enter would press it again instead of meeting the
@@ -437,7 +451,7 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
         <Canvas
           className="walk-canvas"
           shadows="soft"
-          dpr={[1, 1.75]}
+          dpr={[1, 2]}
           camera={{ fov: 50, near: 0.3, far: 2600, position: [0, 20, 40] }}
           gl={{ antialias: true, powerPreference: "high-performance" }}
           aria-hidden="true"
@@ -451,6 +465,7 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
         {intro && <IntroCard onClose={dismissIntro} />}
         <div className="walk-row">
           <LivePill live={live} me={me} sessionRef={sessionRef} showOthers={showOthers} setShowOthers={setShowOthers} />
+          {!intro && ARRIVED_FROM_NEXUS && <NexusReturnLink />}
           {!intro && (
             <button type="button" className="walk-icon-btn" onClick={() => setIntro(true)} aria-label="How to explore" title="How to explore">
               <CircleHelp size={18} aria-hidden="true" />
@@ -547,21 +562,24 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
 
       {/* Top right: minimap and camera controls. */}
       <div className="walk-hud walk-hud-tr">
-        <section className={`walk-minimap ${mapOpen ? "is-open" : ""}`} aria-label="Island map">
+        <section className={`walk-minimap ${mapVisible ? "is-open" : ""}`} aria-label="Island map">
           <button
             type="button"
             className="walk-minimap-toggle"
-            aria-expanded={mapOpen}
+            aria-expanded={mapVisible}
             onClick={(e) => {
-              setMapOpen((o) => !o);
+              if (intro) {
+                dismissIntro();
+                setMapOpen(true);
+              } else setMapOpen((o) => !o);
               backToWorld(e);
             }}
           >
             <MapIcon size={16} aria-hidden="true" />
             <span>Map</span>
-            {mapOpen ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+            {mapVisible ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
           </button>
-          {mapOpen && layout && (
+          {mapVisible && layout && (
             <div className="walk-minimap-body" style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }}>
               <canvas ref={minimapRef} style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }} aria-hidden="true" />
               {layout.discs.map((disc) => {
@@ -633,6 +651,16 @@ function WalkWorld({ onContextGiveUp }: { onContextGiveUp: () => void }) {
         <DistrictBanner key={banner.key} slug={banner.slug} reduced={reduced} engine={engine} onDone={clearBanner} />
       )}
       {nudge > 0 && <PausedHint key={nudge} />}
+
+      {!intro && <div className="walk-hud walk-travel-controls">
+        <button type="button" className="walk-pill" onClick={(e) => { engine?.jump(); backToWorld(e); }} disabled={carAction === "exit"} title="Long jump (Space)">
+          <ArrowUp size={16} aria-hidden="true" /> Jump <kbd>Space</kbd>
+        </button>
+        <button type="button" className="walk-pill" onClick={(e) => { engine?.useCar(); backToWorld(e); }} title="Car (F)">
+          <Car size={16} aria-hidden="true" /> {carAction === "exit" ? "Exit car" : carAction === "enter" ? "Enter car" : "Summon car"}
+        </button>
+        {travelMessage && <span className="walk-travel-message" role="status">{travelMessage}</span>}
+      </div>}
 
       {/* Bottom: proximity prompt and D-pad. */}
       <div className="walk-hud walk-hud-bottom">
@@ -720,40 +748,43 @@ function PortalDeparture({ reduced, onCancel }: { reduced: boolean; onCancel: ()
 
 function IntroCard({ onClose }: { onClose: () => void }) {
   const titleId = useId();
+  const title = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { title.current?.focus({ preventScroll: true }); }, []);
   return (
-    <section className="walk-card walk-intro" aria-labelledby={titleId}>
+    <section className="walk-card walk-intro" aria-labelledby={titleId} onKeyDownCapture={(e) => {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+    }}>
       <button type="button" className="walk-card-x" onClick={onClose} aria-label="Close the introduction">
         <X size={16} aria-hidden="true" />
       </button>
-      <p className="walk-eyebrow">Walk the {L.company} world</p>
-      <h2 id={titleId}>
-        Explore {SITE.org.name}'s {L.companies} on foot
-      </h2>
-      <p>
-        Each neighborhood is a {L.district}, a way of grouping {L.companies}, not a map of where they are. Walk up to a pin to meet {article(L.company)}, or
-        select any logo.{HAS_PEOPLE && ` ${SITE.org.name}'s ${L.people} have an area of their own on the ring.`} The portal on the plaza leads to the Nexus,
-        the shared world of every map in the {NETWORK_NAME}.
-      </p>
-      <p className="walk-touch-hint">Drag with one finger anywhere to walk, or hold the arrow buttons. Two fingers turn and zoom; tap a logo to open it.</p>
-      <ul className="walk-keys">
-        <li>
-          <kbd>W</kbd>
-          <kbd>A</kbd>
-          <kbd>S</kbd>
-          <kbd>D</kbd> or arrows to walk · <kbd>Shift</kbd> to run
-        </li>
-        <li>
-          Drag or <kbd>Q</kbd>/<kbd>E</kbd> to look · scroll or pinch to zoom
-        </li>
-        <li>
-          <kbd>Enter</kbd> to meet the {L.company} in front of you
-        </li>
-      </ul>
-      <button type="button" className="btn btn-primary walk-intro-go" onClick={onClose}>
-        Start exploring
-      </button>
+      <h2 id={titleId} ref={title} tabIndex={-1}>Explore on foot</h2>
+      <p>{L.Companies} are grouped by {L.districts}, not location. Select a logo for details.</p>
+      <details className="walk-controls" onKeyDown={(e) => e.stopPropagation()}>
+        <summary>Controls <ChevronDown size={16} aria-hidden="true" /></summary>
+        <dl className="walk-keyboard-controls">
+          <div><dt>Walk</dt><dd><kbd>WASD</kbd> or arrows</dd></div>
+          <div><dt>Run</dt><dd><kbd>Shift</kbd></dd></div>
+          <div><dt>Long jump</dt><dd><kbd>Space</kbd></dd></div>
+          <div><dt>Car</dt><dd><kbd>F</kbd> to summon, enter or exit</dd></div>
+          <div><dt>Turn</dt><dd>Drag or <kbd>Q</kbd> / <kbd>E</kbd></dd></div>
+          <div><dt>Zoom</dt><dd>Scroll or <kbd>+</kbd> / <kbd>-</kbd></dd></div>
+          <div><dt>Open nearby</dt><dd><kbd>Enter</kbd></dd></div>
+        </dl>
+        <dl className="walk-touch-controls">
+          <div><dt>Walk</dt><dd>Drag or hold arrows</dd></div>
+          <div><dt>Travel</dt><dd>Use Jump or Summon car</dd></div>
+          <div><dt>Turn</dt><dd>Two-finger drag</dd></div>
+          <div><dt>Zoom</dt><dd>Pinch</dd></div>
+          <div><dt>Open</dt><dd>Tap a logo</dd></div>
+        </dl>
+      </details>
+      {ARRIVED_FROM_NEXUS && <NexusReturnLink />}
     </section>
   );
+}
+
+function NexusReturnLink() {
+  return <a className="walk-nexus-return" href={NEXUS_HREF}><Orbit size={16} aria-hidden="true" /> Back to Nexus</a>;
 }
 
 function LivePill({

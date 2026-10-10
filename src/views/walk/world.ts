@@ -59,6 +59,8 @@ export interface World {
   hubOccluder: { value: THREE.Vector4 };
   /** Paint a district's (or the People area's) icon, an SVG string, onto its landmark emblem. */
   setDistrictIcon(slug: AreaSlug, svg: string): void;
+  /** Replace static scenery in place while retaining the engine's root group and state. */
+  setPalette(palette: ScenePalette): void;
   update(time: number, dt: number, reduced: boolean, cameraYaw: number): void;
   dispose(): void;
 }
@@ -73,6 +75,28 @@ export interface AreaLook {
 }
 
 export function buildWorld(layout: WorldLayout, districts: readonly AreaLook[], terrain: Terrain, p: ScenePalette): World {
+  let current = buildWorldParts(layout, districts, terrain, p);
+  const root = current.root;
+  const icons = new Map<AreaSlug, string>();
+  const setDistrictIcon = (slug: AreaSlug, svg: string) => {
+    icons.set(slug, svg);
+    current.setDistrictIcon(slug, svg);
+  };
+  const setPalette = (palette: ScenePalette) => {
+    const next = buildWorldParts(layout, districts, terrain, palette);
+    const previous = current;
+    root.clear();
+    root.add(...next.root.children);
+    current = next;
+    Object.assign(world, next, { root, setPalette, setDistrictIcon });
+    previous.dispose();
+    for (const [slug, svg] of icons) current.setDistrictIcon(slug, svg);
+  };
+  const world: World = { ...current, root, setPalette, setDistrictIcon };
+  return world;
+}
+
+function buildWorldParts(layout: WorldLayout, districts: readonly AreaLook[], terrain: Terrain, p: ScenePalette): Omit<World, "setPalette"> {
   const root = new THREE.Group();
   root.name = "world";
   const disposables: { dispose(): void }[] = [];
@@ -101,7 +125,8 @@ export function buildWorld(layout: WorldLayout, districts: readonly AreaLook[], 
         uniforms: {
           top: { value: p.skyTop.clone() },
           bottom: { value: p.skyBottom.clone() },
-          glow: { value: mix(p.sun, p.sand, 0.4) },
+          glow: { value: p.dark ? new THREE.Color("#52525b") : mix(p.sun, p.sand, 0.4) },
+          night: { value: p.dark ? 1 : 0 },
           sunDir: { value: sunDir },
         },
         vertexShader: /* glsl */ `
@@ -115,12 +140,20 @@ export function buildWorld(layout: WorldLayout, districts: readonly AreaLook[], 
           uniform vec3 bottom;
           uniform vec3 glow;
           uniform vec3 sunDir;
+          uniform float night;
           varying vec3 vDir;
           void main() {
             float t = smoothstep(-0.02, 0.55, vDir.y);
             vec3 col = mix(bottom, top, t);
             float s = max(dot(vDir, sunDir), 0.0);
             col = mix(col, glow, pow(s, 6.0) * 0.55 + pow(s, 64.0) * 0.4);
+            // Fixed points on the sky sphere retain depth during camera movement.
+            vec3 dir = normalize(vDir);
+            vec2 uv = vec2(atan(dir.z, dir.x) * 0.15915494 + 0.5, asin(dir.y) * 0.31830989 + 0.5);
+            vec2 cell = uv * vec2(960.0, 480.0);
+            float seed = fract(sin(dot(floor(cell), vec2(12.9898, 78.233))) * 43758.5453);
+            float star = step(0.9985, seed) * (1.0 - smoothstep(0.0, 0.18, length(fract(cell) - 0.5)));
+            col += vec3(0.34) * star * smoothstep(0.03, 0.35, dir.y) * night;
             gl_FragColor = vec4(col, 1.0);
             #include <colorspace_fragment>
           }`,
@@ -131,9 +164,10 @@ export function buildWorld(layout: WorldLayout, districts: readonly AreaLook[], 
   sky.frustumCulled = false;
   root.add(sky);
 
-  const hemi = new THREE.HemisphereLight(p.skyBottom, mix(p.grass, p.sand, 0.3), 1.35);
+  const hemi = new THREE.HemisphereLight(p.dark ? "#e4e4e7" : p.skyBottom, p.dark ? "#a1a1aa" : mix(p.grass, p.sand, 0.3), p.dark ? 1.8 : 1.35);
   root.add(hemi);
-  const sun = new THREE.DirectionalLight(p.sun, 2.15);
+  if (p.dark) root.add(new THREE.AmbientLight("#ffffff", 0.65));
+  const sun = new THREE.DirectionalLight(p.sun, p.dark ? 1.85 : 2.15);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 1;
@@ -219,7 +253,7 @@ export function buildWorld(layout: WorldLayout, districts: readonly AreaLook[], 
   const seaMat = own(
     new THREE.MeshPhongMaterial({
       color: p.sea,
-      specular: mix(p.sun, p.skyTop, 0.2),
+      specular: p.dark ? new THREE.Color("#71717a") : mix(p.sun, p.skyTop, 0.2),
       shininess: 70,
       transparent: true,
       opacity: 0.8,
@@ -692,7 +726,7 @@ export function buildWorld(layout: WorldLayout, districts: readonly AreaLook[], 
     const tex = own(canvasTexture(cv));
     const field = seededRandom(hashString("walk-cloud-field"));
     for (let i = 0; i < 14; i++) {
-      const mat = own(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.55 + field() * 0.3, depthWrite: false, fog: false }));
+      const mat = own(new THREE.SpriteMaterial({ map: tex, color: p.dark ? "#52525b" : "#ffffff", transparent: true, opacity: 0.55 + field() * 0.3, depthWrite: false, fog: false }));
       const s = new THREE.Sprite(mat);
       const a = field() * Math.PI * 2;
       const r = 180 + field() * 420;
