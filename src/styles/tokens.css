@@ -8,12 +8,13 @@
    --cta, --cta-text, --accent, --focus, --link that follow them)
    are defaults: the site plugin (vite.config.ts) overrides them
    from site/site.json "theme", so a map is themed without
-   editing this file. Type: Instrument Sans + Instrument Serif.
+   editing this file. Type: DM Sans body, Instrument Sans headings, DM Mono code.
    ============================================================ */
 :root {
-  --font-sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-heading: "Instrument Sans", "DM Sans", system-ui, sans-serif;
+  --font-serif: var(--font-heading);
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -24,6 +25,7 @@
   --topbar-h: 60px;
   --sheet-h: 0px; /* set live by the detail sheet */
   --glass-blur: 16px;
+  --touch: 44px;
 
   --brand-ink: #1d1f24;
   --brand-ink-deep: #04070c;
@@ -67,6 +69,10 @@
   --chip-bg: #eef2f4;
   --chip-text: #2b323a;
   --kbd-bg: #ffffff;
+  --walk-help-bg: #fafafa;
+  --walk-help-text: #18181b;
+  --walk-help-muted: #52525b;
+  --walk-help-border: #d4d4d8;
   --warn-bg: #fff5df;
   --warn-text: #7a4f00;
   --danger: #b42318; /* ?debug probe: a finding that explains missing logos */
@@ -101,6 +107,10 @@
     --chip-bg: #222b35;
     --chip-text: #dbe3ea;
     --kbd-bg: #1b222b;
+    --walk-help-bg: #0f0f0f;
+    --walk-help-text: #f4f4f5;
+    --walk-help-muted: #a1a1aa;
+    --walk-help-border: #3f3f46;
     --warn-bg: #3a2c0a;
     --warn-text: #f6d58a;
     --danger: #ff8b7f;
@@ -135,6 +145,10 @@
   --chip-bg: #222b35;
   --chip-text: #dbe3ea;
   --kbd-bg: #1b222b;
+  --walk-help-bg: #0f0f0f;
+  --walk-help-text: #f4f4f5;
+  --walk-help-muted: #a1a1aa;
+  --walk-help-border: #3f3f46;
   --warn-bg: #3a2c0a;
   --warn-text: #f6d58a;
   --danger: #ff8b7f;

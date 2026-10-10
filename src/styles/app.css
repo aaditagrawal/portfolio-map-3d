@@ -4,10 +4,11 @@
 /* ---------- buttons & chips ---------- */
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 38px; padding: 0 14px; border-radius: var(--radius-pill);
+  min-height: var(--touch); height: auto; padding: 8px 16px; border-radius: var(--radius-md);
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  font-weight: 600; font-size: 14px; text-decoration: none; white-space: nowrap;
+  font-weight: 500; font-size: 16px; line-height: 1.5; text-decoration: none; white-space: nowrap;
   transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease), transform var(--speed) var(--ease);
+  min-width: var(--touch);
 }
 .btn:hover { border-color: var(--border-strong); background: var(--surface-alt); }
 .btn:active { transform: translateY(1px); }
@@ -20,7 +21,8 @@
 .btn-quiet { background: transparent; }
 .icon-btn {
   display: inline-grid; place-items: center; width: 38px; height: 38px; flex: none;
-  border-radius: var(--radius-pill); border: 1px solid transparent; background: transparent; color: var(--text-muted);
+  min-width: var(--touch); min-height: var(--touch);
+  border-radius: var(--radius-md); border: 1px solid transparent; background: transparent; color: var(--text-muted);
 }
 .icon-btn:hover, .icon-btn[aria-pressed="true"] { background: var(--surface-alt); color: var(--text); border-color: var(--border); }
 .link-btn { border: 0; background: none; color: var(--link); padding: 4px 0; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
@@ -85,7 +87,7 @@ kbd {
   :root:not([data-theme="light"]) .brand-logo-light { display: none; }
   :root:not([data-theme="light"]) .brand-logo-dark { display: block; }
 }
-.brand-home { display: flex; align-items: center; border-radius: var(--radius-sm); }
+.brand-home { display: flex; align-items: center; min-height: var(--touch); border-radius: var(--radius-sm); color: var(--text); text-decoration: none; }
 .brand-name { font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .brand-title { font-weight: 650; font-size: 17px; padding-left: 10px; border-left: 1px solid var(--border-strong); white-space: nowrap; }
 .brand-title em { font-family: var(--font-serif); font-style: italic; font-weight: 400; font-size: 20px; }
@@ -95,6 +97,7 @@ kbd {
   display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px;
   border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); font-weight: 600; font-size: 14px;
   white-space: nowrap;
+  min-height: var(--touch); min-width: var(--touch);
 }
 .view-switch-btn:hover { color: var(--text); }
 .view-switch-btn[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-1); }
@@ -325,9 +328,6 @@ kbd {
   /* Room for the icon-only Industries button down to 360px wide. */
   .btn-cta, .btn-icon-sm { padding: 0 8px; }
 }
-@media (max-width: 350px) {
-  .brand-logo { display: none; }
-}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
@@ -405,13 +405,46 @@ kbd {
 @media (max-width: 400px) {
   .topbar .btn-icon-sm { display: none; }
 }
+/* A single return action; walk mode keeps it in its introduction or HUD. */
 .nexus-arrival {
   position: absolute; left: 50%; bottom: calc(var(--sheet-h) + 16px); transform: translateX(-50%); z-index: 30;
-  display: flex; align-items: center; gap: 8px; max-width: min(560px, calc(100% - 32px)); padding: 6px 6px 6px 14px;
-  border-radius: var(--radius-pill); background: #0d0b24; color: #fff; box-shadow: var(--shadow-3); font-size: 14px;
-  border: 1px solid rgb(62 230 255 / 0.45);
+  display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); padding: 4px 4px 4px 16px;
+  border-radius: var(--radius-pill); background: var(--walk-help-bg); color: var(--walk-help-text);
+  border: 1px solid var(--walk-help-border); box-shadow: var(--shadow-2); font: 400 13px/1.5 var(--font-mono);
 }
-.nexus-arrival > svg { color: #3ee6ff; flex: none; }
-.nexus-arrival a { color: #8fefff; font-weight: 600; }
-.nexus-arrival .icon-btn { color: #fff; width: 30px; height: 30px; }
-.nexus-arrival .icon-btn:hover { background: rgb(255 255 255 / 0.12); }
+.nexus-arrival > svg { flex: none; }
+.nexus-arrival a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-decoration: none; }
+.nexus-arrival a:hover { text-decoration: underline; }
+.nexus-arrival .icon-btn { color: inherit; width: 44px; height: 44px; }
+.nexus-arrival .icon-btn:hover { background: color-mix(in srgb, var(--walk-help-text) 8%, transparent); }
+
+.mm-hud-btn,
+.walk-icon-btn {
+  min-width: var(--touch);
+  min-height: var(--touch);
+  border-radius: var(--radius-md);
+}
+
+.mm-switch-btn,
+.mm-legend-toggle,
+.list-switch-btn,
+.sheet-more,
+.walk-pill,
+.walk-pop-reroll {
+  min-height: var(--touch);
+}
+
+/* Keep every control touch-sized by giving the view switch its own phone row. */
+@media (max-width: 760px) {
+  :root { --topbar-h: 112px; }
+  .topbar { height: var(--topbar-h); flex-wrap: wrap; align-content: center; gap: 8px; padding: 8px; }
+  .topbar .brand { flex: 1; }
+  .topbar .brand-name { max-width: 100%; }
+  .topbar .brand-home { min-width: var(--touch); }
+  .topbar .topbar-actions { flex: none; gap: 4px; }
+  .topbar .view-switch { order: 3; flex-basis: 100%; justify-content: center; margin: 0; padding: 0; border: 0; background: transparent; }
+  .topbar .view-switch-btn { flex: 1; max-width: 160px; height: var(--touch); }
+  .topbar .view-switch-label { display: inline; }
+  .search-expanded .search-field input { height: var(--touch); }
+  .search-expanded .search-back { width: var(--touch); height: var(--touch); }
+}

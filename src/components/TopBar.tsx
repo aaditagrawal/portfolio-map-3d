@@ -54,7 +54,7 @@ export default function TopBar() {
       <div className="topbar-actions">
         <SearchBox />
         {HAS_FINDER && (
-          <button type="button" className="btn btn-cta" aria-pressed={panel === "finder"} onClick={() => openPanel(panel === "finder" ? null : "finder")}>
+          <button type="button" className="btn btn-cta" aria-label="Find a provider" aria-pressed={panel === "finder"} onClick={() => openPanel(panel === "finder" ? null : "finder")}>
             <Waypoints size={16} aria-hidden="true" />
             <span className="hide-sm">Find a provider</span>
           </button>
@@ -94,13 +94,9 @@ function Brand() {
   );
   return (
     <div className="brand">
-      {SITE.org.website ? (
-        <a className="brand-home" href={SITE.org.website} title={SITE.org.name}>
-          {logos}
-        </a>
-      ) : (
-        logos
-      )}
+      <a className="brand-home" href={import.meta.env.BASE_URL} title={`${SITE.org.name} home`} aria-label={`${SITE.org.name}, home`}>
+        {logos}
+      </a>
       <span className="brand-title">
         {L.Company} <em>Map</em>
       </span>

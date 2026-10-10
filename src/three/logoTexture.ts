@@ -28,7 +28,7 @@
    texture in place (texSubImage2D, then regenerating mipmaps) is a path the
    device check never runs, and it buys nothing here. */
 import * as THREE from "three";
-import { districtOf, initials, personInitials } from "../data/catalog";
+import { COMPANIES, districtOf, initials, personInitials } from "../data/catalog";
 import type { Company, LogoInfo, Person } from "../data/types";
 import { SITE } from "../site";
 import { cpuContext } from "./cpuCanvas";
@@ -38,9 +38,11 @@ import { companyLogo, loadImage } from "./logoInfo";
 export const BADGE_W = 512;
 export const BADGE_H = 256;
 export const LABEL_H = 92;
-/** Texture pixels per logical unit. 0.75 keeps logos crisp at on-screen sizes while holding
- *  memory for all badges to roughly 90 MB instead of 160 MB (matters on phones). */
+/** Unlabeled walking pins use compact textures. Globe labels need more pixels when zoomed in. */
 const RES = 0.75;
+// Retina detail for small maps; larger catalogs share a 96 MB labeled-texture budget.
+// Never reduce an existing catalog below the compact resolution used by walking pins.
+const LABEL_RES = Math.max(RES, Math.min(1.5, Math.sqrt(96_000_000 / Math.max(1, COMPANIES.length) / (BADGE_W * (BADGE_H + LABEL_H) * 4 * 4 / 3))));
 /** The brand ink (site.json theme.ink): label text and the dark logo plate. */
 const ink = () => SITE.theme.ink;
 
@@ -144,7 +146,8 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number, size
 }
 
 function draw(ctx: CanvasRenderingContext2D, m: Company, withLabel: boolean, logo: Logo) {
-  ctx.setTransform(RES, 0, 0, RES, 0, 0);
+  const res = withLabel ? LABEL_RES : RES;
+  ctx.setTransform(res, 0, 0, res, 0, 0);
   ctx.imageSmoothingQuality = "high";
   const W = BADGE_W;
   const color = districtOf(m).color;
@@ -201,7 +204,8 @@ function draw(ctx: CanvasRenderingContext2D, m: Company, withLabel: boolean, log
 }
 
 function badgeSize(withLabel: boolean): [number, number] {
-  return [Math.round(BADGE_W * RES), Math.round((BADGE_H + (withLabel ? LABEL_H : 0)) * RES)];
+  const res = withLabel ? LABEL_RES : RES;
+  return [Math.round(BADGE_W * res), Math.round((BADGE_H + (withLabel ? LABEL_H : 0)) * res)];
 }
 
 function logoReady(m: Company): Promise<Logo> {
