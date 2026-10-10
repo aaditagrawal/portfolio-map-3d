@@ -8,7 +8,7 @@ import { hasWebGL2 } from "../three/webgl.ts";
 
 export type EngineStatus = "pending" | "ready" | "unavailable";
 
-export function useEngine(reduced: boolean, pick: RefObject<((id: string | null) => void) | null>): { engine: NexusEngine | null; status: EngineStatus } {
+export function useEngine(reduced: boolean, pick: RefObject<((id: string | null, district?: string) => void) | null>): { engine: NexusEngine | null; status: EngineStatus } {
   const [state, setState] = useState<{ engine: NexusEngine | null; status: EngineStatus }>({ engine: null, status: "pending" });
   const [generation, setGeneration] = useState(0);
   const reducedRef = useRef(reduced);
@@ -24,7 +24,7 @@ export function useEngine(reduced: boolean, pick: RefObject<((id: string | null)
     import("../three/engine.ts")
       .then(({ NexusEngine }) => {
         if (!alive) return;
-        engine = new NexusEngine({ onPick: (id) => pick.current?.(id), onGiveUp: () => setGeneration((g) => g + 1) }, reducedRef.current);
+        engine = new NexusEngine({ onPick: (id, district) => pick.current?.(id, district), onGiveUp: () => setGeneration((g) => g + 1) }, reducedRef.current);
         setState({ engine, status: "ready" });
       })
       .catch(() => {

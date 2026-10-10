@@ -2,7 +2,7 @@
    in a 64 x 64 box centered on (32, 32). A crystal (the icosahedron seen along a three-fold
    axis: a hexagon and a facet) inside a geodesic cage, a tilted ring that passes behind the
    crystal and in front of it, and a glow. Icons.tsx (Mark) and three/paint.ts (drawMark) draw
-   it; public/favicon.svg repeats it (mark.test.ts checks that it does). */
+   it; public/favicon.svg keeps the crystal and orbit without the fine cage. */
 
 export type Point = readonly [number, number];
 
